@@ -1,0 +1,118 @@
+{
+  "version": 5,
+  "total_coins": 996271,
+  "max_level_passed": 0,
+  "ants": {
+    "1": {
+      "count": 1,
+      "carry": 21,
+      "speed": 0,
+      "defense": 0
+    }
+  },
+  "settings": {
+    "music_on": true,
+    "sfx_on": true
+  },
+  "levels": {},
+  "daily_tasks": {
+    "date": "",
+    "tasks": []
+  },
+  "weekly_tasks": {
+    "week": "",
+    "tasks": []
+  },
+  "achievements": {
+    "C1": {
+      "progress": 1,
+      "claimed": true,
+      "unlocked_notified": true
+    },
+    "C2": {
+      "progress": 1,
+      "claimed": false
+    },
+    "C3": {
+      "progress": 1,
+      "claimed": false
+    },
+    "C4": {
+      "progress": 1,
+      "claimed": false
+    },
+    "H1": {
+      "progress": 0,
+      "claimed": false
+    },
+    "H2": {
+      "progress": 0,
+      "claimed": false
+    },
+    "H3": {
+      "progress": 0,
+      "claimed": false
+    },
+    "H4": {
+      "progress": 0,
+      "claimed": false
+    },
+    "S1": {
+      "progress": 0,
+      "claimed": false
+    },
+    "S2": {
+      "progress": 0,
+      "claimed": false
+    },
+    "S3": {
+      "progress": 0,
+      "claimed": false
+    },
+    "S4": {
+      "progress": 0,
+      "claimed": false
+    },
+    "E1": {
+      "progress": 0,
+      "claimed": false
+    },
+    "E2": {
+      "progress": 0,
+      "claimed": false
+    },
+    "E3": {
+      "progress": 0,
+      "claimed": false
+    },
+    "E4": {
+      "progress": 999900,
+      "claimed": false,
+      "unlocked_notified": true
+    },
+    "G1": {
+      "progress": 21,
+      "claimed": false,
+      "unlocked_notified": true
+    },
+    "G2": {
+      "progress": 0,
+      "claimed": false
+    },
+    "G3": {
+      "progress": 21,
+      "claimed": false
+    },
+    "G4": {
+      "progress": 0,
+      "claimed": false
+    }
+  },
+  "checkin": {
+    "current_day": 0,
+    "last_checkin_date": null,
+    "total_checkins": 0,
+    "streak": 0,
+    "cycles_completed": 0
+  }
+}
