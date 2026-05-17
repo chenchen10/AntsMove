@@ -103,3 +103,39 @@ class Sweet(pygame.sprite.Sprite):
                          (cx_icon + half, cy_icon - half),
                          (cx_icon - half, cy_icon + half), 2)
         screen.blit(num_surf, (badge_x + pad_x + icon_size + gap, badge_y + pad_y))
+
+    def draw_with_hp_effect_at(self, screen, sx, sy):
+        """在指定屏幕坐标绘制甜点 + 数量标签"""
+        if not self.alive:
+            return
+
+        draw_rect = self.image.get_rect(center=(int(sx), int(sy)))
+        screen.blit(self.image, draw_rect)
+
+        # 数量标签
+        font = _get_qty_font()
+        num_surf = font.render(str(self.remaining), True, (255, 255, 255))
+        nw, nh = num_surf.get_size()
+        icon_size = 10
+        gap = 4
+        pad_x, pad_y = 6, 3
+        badge_w = icon_size + gap + nw + pad_x * 2
+        badge_h = max(icon_size, nh) + pad_y * 2
+        badge_x = draw_rect.centerx - badge_w // 2
+        badge_y = draw_rect.top - badge_h - 4
+        badge_rect = pygame.Rect(badge_x, badge_y, badge_w, badge_h)
+
+        badge_surf = pygame.Surface((badge_w, badge_h), pygame.SRCALPHA)
+        pygame.draw.rect(badge_surf, (0, 0, 0, 140), (0, 0, badge_w, badge_h), border_radius=badge_h // 2)
+        screen.blit(badge_surf, badge_rect)
+
+        cx_icon = badge_x + pad_x + icon_size // 2
+        cy_icon = badge_y + badge_h // 2
+        half = icon_size // 2 - 1
+        pygame.draw.line(screen, (255, 80, 80),
+                         (cx_icon - half, cy_icon - half),
+                         (cx_icon + half, cy_icon + half), 2)
+        pygame.draw.line(screen, (255, 80, 80),
+                         (cx_icon + half, cy_icon - half),
+                         (cx_icon - half, cy_icon + half), 2)
+        screen.blit(num_surf, (badge_x + pad_x + icon_size + gap, badge_y + pad_y))

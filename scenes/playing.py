@@ -4,7 +4,7 @@ import pygame
 import math
 import time as _time
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT,
+    SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT,
     GRAY, BG_COLOR, TEXT_COLOR,
     CARD_BG, CARD_BORDER, ACCENT_BLUE, ACCENT_RED, ACCENT_GOLD, BTN_HOVER,
 )
@@ -53,11 +53,12 @@ class PlayingScene:
             ctx.menu_open = False
             return
 
-        # Click on sweet → direct player ants
+        # Click on sweet → direct player ants（屏幕坐标转世界坐标）
+        wx, wy = ctx.camera.screen_to_world(mx, my)
         for sweet in ctx.sweets:
             if not sweet.alive:
                 continue
-            dist = math.sqrt((mx - sweet.x) ** 2 + (my - sweet.y) ** 2)
+            dist = math.sqrt((wx - sweet.x) ** 2 + (wy - sweet.y) ** 2)
             if dist < sweet.current_size // 2 + 10:
                 for ant in ctx.player_ants:
                     if ant.state == Ant.STATE_STUNNED or ant.state == Ant.STATE_RETURNING:
@@ -77,16 +78,22 @@ class PlayingScene:
 
     def _draw_playing(self, screen):
         ctx = self.ctx
+        cam = ctx.camera
 
-        # Background（按关卡轮训背景图）
+        # Background（按关卡轮训背景图，铺满世界）
         if ctx.level_bgs:
             bg_count = len(ctx.level_bgs)
             bg_idx = (ctx.current_level - 1) % bg_count
-            screen.blit(ctx.level_bgs[bg_idx], (0, 0))
+            bg_img = ctx.level_bgs[bg_idx]
+            # 平铺背景覆盖世界
+            for bx in range(0, WORLD_WIDTH, bg_img.get_width()):
+                for by in range(0, WORLD_HEIGHT, bg_img.get_height()):
+                    sx, sy = cam.world_to_screen(bx, by)
+                    screen.blit(bg_img, (sx, sy))
         else:
             screen.fill(BG_COLOR)
 
-        # Terrain color overlay (skip if level has its own background image)
+        # Terrain color overlay
         if not ctx.level_bgs:
             terrain = ctx.level_data['terrain']
             from terrain import TERRAIN_COLORS
@@ -95,7 +102,7 @@ class PlayingScene:
             overlay.fill((*terrain_color, 30))
             screen.blit(overlay, (0, 0))
 
-        # ── 顶部信息栏 ──
+        # ── 顶部信息栏 ──（固定屏幕位置）
         minutes = int(ctx.level_timer) // 60
         seconds = int(ctx.level_timer) % 60
         timer_color = ACCENT_RED if ctx.level_timer < 30 else TEXT_COLOR
@@ -108,36 +115,49 @@ class PlayingScene:
         screen.blit(hud_surf, (hud_rect.centerx - hud_surf.get_width() // 2,
                                 hud_rect.centery - hud_surf.get_height() // 2))
 
-        # ── 左下状态栏 ──
+        # ── 左下状态栏 ──（固定屏幕位置）
         self._draw_status_bar(screen)
 
-        # Draw grinders with glow
+        # Draw grinders with glow（使用相机偏移）
         glow_alpha = int(30 + 20 * math.sin(_time.time() * 2))
 
+        # 玩家研磨机
+        pgx, pgy = cam.world_to_screen(ctx.player_grinder.x, ctx.player_grinder.y)
         glow_surf = pygame.Surface((60 + 20, 60 + 20), pygame.SRCALPHA)
         glow_center = (40, 40)
         pygame.draw.circle(glow_surf, (80, 180, 80, glow_alpha), glow_center, 38)
-        glow_rect = glow_surf.get_rect(center=(ctx.player_grinder.x, ctx.player_grinder.y))
+        glow_rect = glow_surf.get_rect(center=(pgx, pgy))
         screen.blit(glow_surf, glow_rect)
-        ctx.player_grinder.draw(screen)
+        # 绘制研磨机精灵（偏移）
+        grinder_img = ctx.player_grinder.image if hasattr(ctx.player_grinder, 'image') else None
+        if grinder_img:
+            g_rect = grinder_img.get_rect(center=(pgx, pgy))
+            screen.blit(grinder_img, g_rect)
+        else:
+            pygame.draw.circle(screen, (80, 130, 80), (int(pgx), int(pgy)), 30)
         label_font = font_helper.get_font(22)
         label_p = label_font.render("我方", True, ACCENT_BLUE)
-        screen.blit(label_p, (ctx.player_grinder.x - label_p.get_width() // 2,
-                               ctx.player_grinder.y - 35))
+        screen.blit(label_p, (pgx - label_p.get_width() // 2, pgy - 35))
 
+        # AI研磨机
+        aix, aiy = cam.world_to_screen(ctx.ai_grinder.x, ctx.ai_grinder.y)
         glow_surf2 = pygame.Surface((60 + 20, 60 + 20), pygame.SRCALPHA)
         pygame.draw.circle(glow_surf2, (180, 80, 80, glow_alpha), glow_center, 38)
-        glow_rect2 = glow_surf2.get_rect(center=(ctx.ai_grinder.x, ctx.ai_grinder.y))
+        glow_rect2 = glow_surf2.get_rect(center=(aix, aiy))
         screen.blit(glow_surf2, glow_rect2)
-        ctx.ai_grinder.draw(screen)
+        grinder_img2 = ctx.ai_grinder.image if hasattr(ctx.ai_grinder, 'image') else None
+        if grinder_img2:
+            g_rect2 = grinder_img2.get_rect(center=(aix, aiy))
+            screen.blit(grinder_img2, g_rect2)
+        else:
+            pygame.draw.circle(screen, (130, 80, 80), (int(aix), int(aiy)), 30)
         label_a = label_font.render("敌方", True, ACCENT_RED)
-        screen.blit(label_a, (ctx.ai_grinder.x - label_a.get_width() // 2,
-                               ctx.ai_grinder.y + 38))
+        screen.blit(label_a, (aix - label_a.get_width() // 2, aiy + 38))
 
-        # ── 右侧排行榜 ──
+        # ── 右侧排行榜 ──（固定屏幕位置）
         self._draw_leaderboard(screen)
 
-        # ── 右上菜单按钮 ──
+        # ── 右上菜单按钮 ──（固定屏幕位置）
         btn_menu = pygame.Rect(SCREEN_WIDTH - 44, 8, 36, 36)
         hover_menu = btn_menu.collidepoint(*pygame.mouse.get_pos())
         draw_card(screen, btn_menu,
@@ -147,7 +167,7 @@ class PlayingScene:
         screen.blit(menu_txt, (btn_menu.centerx - menu_txt.get_width() // 2,
                                 btn_menu.centery - menu_txt.get_height() // 2))
 
-        # ── 下拉菜单 ──
+        # ── 下拉菜单 ──（固定屏幕位置）
         if ctx.menu_open:
             menu_items = ['商店', '暂停', '主菜单']
             menu_w = 130
@@ -165,31 +185,40 @@ class PlayingScene:
                 screen.blit(txt, (item_rect.centerx - txt.get_width() // 2,
                                    item_rect.centery - txt.get_height() // 2))
 
-        # Draw sweets
+        # Draw sweets（世界坐标 → 屏幕坐标）
         for sweet in ctx.sweets:
             if sweet.alive:
-                sweet.draw_with_hp_effect(screen)
+                sx, sy = cam.world_to_screen(sweet.x, sweet.y)
+                # 只绘制可见范围内的甜点
+                if -100 < sx < SCREEN_WIDTH + 100 and -100 < sy < SCREEN_HEIGHT + 100:
+                    sweet.draw_with_hp_effect_at(screen, sx, sy)
 
-        # Draw player ants
+        # Draw player ants（世界坐标 → 屏幕坐标）
         mx, my = pygame.mouse.get_pos()
         hover_ant = None
         for ant in ctx.player_ants:
-            screen.blit(ant.image, ant.rect)
-            ant.draw_storage_bar(screen)
-            ant.draw_stun_indicator(screen, ctx.font_tiny)
-            ant.draw_level_badge(screen, ctx.font_tiny)
-            if ant.rect.collidepoint(mx, my):
-                hover_ant = ant
+            sx, sy = cam.world_to_screen(ant.x, ant.y)
+            if -60 < sx < SCREEN_WIDTH + 60 and -60 < sy < SCREEN_HEIGHT + 60:
+                draw_rect = ant.image.get_rect(center=(int(sx), int(sy)))
+                screen.blit(ant.image, draw_rect)
+                ant.draw_storage_bar_at(screen, sx, sy)
+                ant.draw_stun_indicator_at(screen, sx, sy, ctx.font_tiny)
+                ant.draw_level_badge_at(screen, sx, sy, ctx.font_tiny)
+                if draw_rect.collidepoint(mx, my):
+                    hover_ant = ant
 
-        # Draw AI ants
+        # Draw AI ants（世界坐标 → 屏幕坐标）
         for ant in ctx.ai_ants:
-            screen.blit(ant.image, ant.rect)
-            ant.draw_storage_bar(screen)
-            ant.draw_stun_indicator(screen, ctx.font_tiny)
-            if ant.rect.collidepoint(mx, my):
-                hover_ant = ant
+            sx, sy = cam.world_to_screen(ant.x, ant.y)
+            if -60 < sx < SCREEN_WIDTH + 60 and -60 < sy < SCREEN_HEIGHT + 60:
+                draw_rect = ant.image.get_rect(center=(int(sx), int(sy)))
+                screen.blit(ant.image, draw_rect)
+                ant.draw_storage_bar_at(screen, sx, sy)
+                ant.draw_stun_indicator_at(screen, sx, sy, ctx.font_tiny)
+                if draw_rect.collidepoint(mx, my):
+                    hover_ant = ant
 
-        # Hover tooltip
+        # Hover tooltip（固定屏幕位置）
         if hover_ant:
             name = hover_ant.ant_data['name']
             role = hover_ant.ant_data['role']
@@ -205,9 +234,12 @@ class PlayingScene:
             screen.blit(tip_bg, (tip_x, tip_y))
             screen.blit(tip_surf, (tip_x + 6, tip_y + 4))
 
-        # Draw floating texts
+        # Draw floating texts（世界坐标 → 屏幕坐标）
         for ft in ctx.floating_texts:
-            ft.draw(screen, ctx.font_small)
+            ft.draw_at(screen, cam, ctx.font_small)
+
+        # ── 小地图 ──（固定屏幕位置）
+        cam.draw_minimap(screen, ctx)
 
     def _draw_status_bar(self, screen):
         """左下角状态栏：上阵总数、总搬运量、平均速度"""

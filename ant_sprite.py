@@ -4,7 +4,7 @@ import pygame
 import math
 import random
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, ANT_SIZE,
+    SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, ANT_SIZE,
     BLUE_ANT_COLOR, RED_ANT_COLOR,
     STUN_DURATION, STUN_SPEED_MULT,
     SWEET_COLORS,
@@ -100,11 +100,18 @@ class Ant(pygame.sprite.Sprite):
         ant_images = self.assets.get('ant_images', {})
         if ant_id in ant_images and ant_images[ant_id] is not None:
             self.base_image = ant_images[ant_id].copy()
-            # 敌方蚂蚁加红色色调区分（只改RGB，不碰Alpha）
+            # 敌方蚂蚁加红色色调区分：先铺半透明红色底色，再用原图混合
             if team == 'ai':
-                tint = pygame.Surface(self.base_image.get_size(), pygame.SRCALPHA)
-                tint.fill((220, 160, 160, 255))
-                self.base_image.blit(tint, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+                # 提取Alpha通道后，用红色替代RGB
+                w, h = self.base_image.get_size()
+                red_tint = pygame.Surface((w, h), pygame.SRCALPHA)
+                red_tint.fill((180, 60, 50, 120))
+                self.base_image.blit(red_tint, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+                # 加一圈红色描边增强可见性
+                mask = pygame.mask.from_surface(self.base_image)
+                outline = mask.to_surface(setcolor=(200, 60, 40, 180), unsetcolor=(0, 0, 0, 0))
+                for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    self.base_image.blit(outline, (dx, dy), special_flags=pygame.BLEND_RGBA_MIN)
             self.up_frames = []
             self.down_frames = []
         elif team == 'player':
@@ -263,8 +270,8 @@ class Ant(pygame.sprite.Sprite):
             self.x += dir_x * move_dist + perp_x * wobble * dt
             self.y += dir_y * move_dist + perp_y * wobble * dt
 
-        self.x = max(10, min(SCREEN_WIDTH - 10, self.x))
-        self.y = max(10, min(SCREEN_HEIGHT - 10, self.y))
+        self.x = max(10, min(WORLD_WIDTH - 10, self.x))
+        self.y = max(10, min(WORLD_HEIGHT - 10, self.y))
 
         self._update_animation(dt, moving=True)
         self.rect.center = (int(self.x), int(self.y))
@@ -357,11 +364,39 @@ class Ant(pygame.sprite.Sprite):
                 color = SWEET_COLORS.get('candy', (200, 200, 200))
                 pygame.draw.circle(screen, color, (x + icon_size // 2, y + icon_size // 2), icon_size // 2)
 
+    def draw_storage_bar_at(self, screen, sx, sy):
+        """在指定屏幕坐标绘制存储条"""
+        if self.storage <= 0:
+            return
+        icon_count = (self.storage + 1) // 2
+        icon_size = 12
+        spacing = 2
+        total_height = icon_count * (icon_size + spacing) - spacing
+        start_x = int(sx) - icon_size // 2
+        start_y = int(sy) - self.size // 2 - 5 - total_height
+        icon_key = f'{self.ant_data["name"]}_icon'
+        icon_image = self.assets.get(icon_key)
+        for i in range(icon_count):
+            x = start_x
+            y = start_y + i * (icon_size + spacing)
+            if icon_image:
+                screen.blit(icon_image, (x, y))
+            else:
+                color = SWEET_COLORS.get('candy', (200, 200, 200))
+                pygame.draw.circle(screen, color, (x + icon_size // 2, y + icon_size // 2), icon_size // 2)
+
     def draw_stun_indicator(self, screen, font):
         if self.state == self.STATE_STUNNED:
             txt = font.render("晕", True, (255, 0, 0))
             screen.blit(txt, (int(self.x) - txt.get_width() // 2,
                               int(self.y) - self.size // 2 - 22))
+
+    def draw_stun_indicator_at(self, screen, sx, sy, font):
+        """在指定屏幕坐标绘制僵直指示"""
+        if self.state == self.STATE_STUNNED:
+            txt = font.render("晕", True, (255, 0, 0))
+            screen.blit(txt, (int(sx) - txt.get_width() // 2,
+                              int(sy) - self.size // 2 - 22))
 
     def draw_level_badge(self, screen, font):
         """绘制等级标签（显示搬运等级）"""
@@ -369,3 +404,10 @@ class Ant(pygame.sprite.Sprite):
             txt = font.render(f"C{self.carry_level}", True, (200, 220, 255))
             screen.blit(txt, (int(self.x) - txt.get_width() // 2,
                               int(self.y) + self.size // 2 + 2))
+
+    def draw_level_badge_at(self, screen, sx, sy, font):
+        """在指定屏幕坐标绘制等级标签"""
+        if self.team == 'player' and self.carry_level > 0:
+            txt = font.render(f"C{self.carry_level}", True, (200, 220, 255))
+            screen.blit(txt, (int(sx) - txt.get_width() // 2,
+                              int(sy) + self.size // 2 + 2))

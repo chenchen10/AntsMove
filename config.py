@@ -5,6 +5,10 @@ SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 700
 FPS = 60
 
+# 世界尺寸（大于屏幕尺寸，支持相机滚动）
+WORLD_WIDTH = 2400
+WORLD_HEIGHT = 1400
+
 # 颜色
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)

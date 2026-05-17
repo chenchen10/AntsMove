@@ -10,7 +10,7 @@ import random
 import os
 
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
+    SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, FPS,
     SWEET_COLORS, WHITE,
 )
 from assets import load_assets
@@ -35,6 +35,7 @@ from ui_checkin import CheckinUI
 import font_helper
 
 from scenes import SCENE_MAP
+from camera import Camera
 
 
 # ── FloatingText ──────────────────────────────────────────
@@ -74,6 +75,23 @@ class FloatingText:
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             screen.blit(outline_surf, rect.move(dx, dy))
         screen.blit(text_surf, rect)
+
+    def draw_at(self, screen, camera, font):
+        """使用相机偏移绘制浮动文字"""
+        if not self.alive:
+            return
+        sx, sy = camera.world_to_screen(self.x, self.y)
+        if -100 < sx < SCREEN_WIDTH + 100 and -100 < sy < SCREEN_HEIGHT + 100:
+            alpha = max(0, int(255 * (1.0 - self.timer / self.duration)))
+            f = _get_ft_font(self.font_size)
+            text_surf = f.render(self.text, True, self.color)
+            outline_surf = f.render(self.text, True, (0, 0, 0))
+            outline_surf.set_alpha(alpha)
+            text_surf.set_alpha(alpha)
+            rect = text_surf.get_rect(center=(int(sx), int(sy)))
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                screen.blit(outline_surf, rect.move(dx, dy))
+            screen.blit(text_surf, rect)
 
 
 # ── Helper ──────────────────────────────────────────
@@ -197,6 +215,9 @@ class GameState:
 
         # 成就解锁通知队列
         self.ach_notify_queue = AchievementNotifyQueue()
+
+        # 相机系统
+        self.camera = Camera()
 
         # Scenes（按需实例化，首次访问时创建）
         self._scenes = {}
@@ -329,6 +350,14 @@ class GameState:
             if consumed:
                 return
             # 点击面板外部 → 面板已关闭，穿透给底层场景
+
+        # 小地图点击 → 相机跳转
+        if self.state == 'playing':
+            minimap_rect = self.camera.minimap_rect
+            if minimap_rect.collidepoint(mx, my):
+                wx, wy = self.camera.minimap_to_world(mx, my)
+                self.camera.center_on(wx, wy)
+                return
 
         scene = self._get_scene(self.state)
         scene.handle_click(mx, my)
@@ -572,25 +601,25 @@ class GameState:
         # 1:1镜像：上阵上限受关卡限制
         self.team_size_limit = get_max_team_size(self.current_level)
 
-        # Player ants（全部一次性部署，错开位置）
+        # Player ants（全部一次性部署，错开位置，世界左下区域）
         self.player_ants = []
         for idx, ant_id in enumerate(self.team):
             carry_lv = self.sm.get_ant_attr(ant_id, 'carry')
             speed_lv = self.sm.get_ant_attr(ant_id, 'speed')
             defense_lv = self.sm.get_ant_attr(ant_id, 'defense')
-            ant = Ant(ant_id, 'player', 50 + idx * 25, SCREEN_HEIGHT - 80 - idx * 25,
+            ant = Ant(ant_id, 'player', 200 + idx * 30, WORLD_HEIGHT - 200 - idx * 30,
                       carry_level=carry_lv, speed_level=speed_lv, defense_level=defense_lv,
                       assets=self.assets, terrain=self.level_data['terrain'])
             self.player_ants.append(ant)
 
-        # AI ants（独立梯队池 + 独立属性公式，不镜像玩家种类和等级）
+        # AI ants（独立梯队池 + 独立属性公式，不镜像玩家种类和等级，世界右上区域）
         self.ai_ants = []
         ai_count = len(self.team)  # 1:1数量镜像
         ai_team_ids = generate_ai_team(self.current_level, ai_count)
         ai_buffs = get_ai_late_buffs(self.current_level)
         for idx, aid in enumerate(ai_team_ids):
             ai_carry, ai_speed, ai_defense = get_ai_ant_stats(aid, self.current_level)
-            ant = Ant(aid, 'ai', SCREEN_WIDTH - 60 - idx * 25, 80 + idx * 25,
+            ant = Ant(aid, 'ai', WORLD_WIDTH - 200 - idx * 30, 200 + idx * 30,
                       carry_level=0, speed_level=0, defense_level=0,
                       assets=self.assets, terrain=self.level_data['terrain'])
             # 用AI独立属性覆盖基础值
@@ -604,13 +633,13 @@ class GameState:
                 ant._ai_stun_reduction = ai_buffs.get('stun_reduction', 0)
             self.ai_ants.append(ant)
 
-        # Sweets
+        # Sweets（世界中心）
         self.sweets = []
         sweet_info = self.level_data['sweet']
         sweet = Sweet(
             sweet_type=sweet_info['type'],
-            x=SCREEN_WIDTH // 2,
-            y=300,
+            x=WORLD_WIDTH // 2,
+            y=WORLD_HEIGHT // 2,
             max_hp=sweet_info['hp'],
             coin_per=sweet_info['coin_per'],
             assets=self.assets,
@@ -618,9 +647,12 @@ class GameState:
         )
         self.sweets.append(sweet)
 
-        # Grinders
-        self.player_grinder = Grinder(x=80, y=SCREEN_HEIGHT - 110, color=(80, 130, 80), label="我方")
-        self.ai_grinder = Grinder(x=SCREEN_WIDTH - 80, y=80, color=(130, 80, 80), label="敌方")
+        # Grinders（世界对角位置）
+        self.player_grinder = Grinder(x=200, y=WORLD_HEIGHT - 200, color=(80, 130, 80), label="我方")
+        self.ai_grinder = Grinder(x=WORLD_WIDTH - 200, y=200, color=(130, 80, 80), label="敌方")
+
+        # 相机居中到甜点位置
+        self.camera.center_on(WORLD_WIDTH // 2, WORLD_HEIGHT // 2)
 
         # 场景缓存失效（关卡切换后需要重建）
         self._scenes.pop('paused', None)
@@ -742,6 +774,21 @@ class GameState:
 
         if self.state != 'playing':
             return
+
+        # 键盘滚动相机
+        keys = pygame.key.get_pressed()
+        scroll_speed = 400 * dt
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            self.camera.move(-scroll_speed, 0)
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            self.camera.move(scroll_speed, 0)
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            self.camera.move(0, -scroll_speed)
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            self.camera.move(0, scroll_speed)
+
+        # 更新相机
+        self.camera.update(dt)
 
         # Timer
         self.level_timer -= dt
@@ -898,8 +945,8 @@ class GameState:
                         push = 60
                         a_ant.x += dx / d * push
                         a_ant.y += dy / d * push
-                        a_ant.x = max(10, min(SCREEN_WIDTH - 10, a_ant.x))
-                        a_ant.y = max(10, min(SCREEN_HEIGHT - 10, a_ant.y))
+                        a_ant.x = max(10, min(WORLD_WIDTH - 10, a_ant.x))
+                        a_ant.y = max(10, min(WORLD_HEIGHT - 10, a_ant.y))
                         self.floating_texts.append(
                             FloatingText("击退!", a_ant.x, a_ant.y - 20,
                                          (255, 180, 50), 0.6, 14))
@@ -943,8 +990,8 @@ class GameState:
                         push = 60
                         p_ant.x += dx / d * push
                         p_ant.y += dy / d * push
-                        p_ant.x = max(10, min(SCREEN_WIDTH - 10, p_ant.x))
-                        p_ant.y = max(10, min(SCREEN_HEIGHT - 10, p_ant.y))
+                        p_ant.x = max(10, min(WORLD_WIDTH - 10, p_ant.x))
+                        p_ant.y = max(10, min(WORLD_HEIGHT - 10, p_ant.y))
 
                 # 僵直（冷却1.0秒 + 被动方0.5秒免疫期）
                 sc2 = a_ant.has_stun_chance()
