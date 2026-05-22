@@ -10,8 +10,14 @@ import random
 import os
 
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, FPS,
-    SWEET_COLORS, WHITE,
+    SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, FPS,
+    SWEET_COLORS, WHITE, ZONE_CONFIG, GRINDER_SIZE,
+    ZONE_TRANSITION_WIDTH,
+)
+from region import (
+    PLAYER_NEST_X, PLAYER_NEST_Y, AI_NEST_X, AI_NEST_Y,
+    PLAYER_SPAWN_X_RANGE, PLAYER_SPAWN_Y_RANGE,
+    AI_SPAWN_X_RANGE, AI_SPAWN_Y_RANGE,
 )
 from assets import load_assets
 from ants_data import (
@@ -35,6 +41,9 @@ from ui_checkin import CheckinUI
 import font_helper
 
 from scenes import SCENE_MAP
+from camera import Camera
+from sweet_zone_manager import SweetZoneManager
+from ai_strategy import choose_target_sweet, determine_army_strategy
 
 
 # ── FloatingText ──────────────────────────────────────────
@@ -71,6 +80,22 @@ class FloatingText:
         outline_surf.set_alpha(alpha)
         text_surf.set_alpha(alpha)
         rect = text_surf.get_rect(center=(int(self.x), int(self.y)))
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            screen.blit(outline_surf, rect.move(dx, dy))
+        screen.blit(text_surf, rect)
+
+    def draw_at_screen(self, screen, font, camera):
+        """绘制浮动文字，使用摄像机偏移"""
+        if not self.alive:
+            return
+        sx, sy = camera.world_to_screen(self.x, self.y)
+        alpha = max(0, int(255 * (1.0 - self.timer / self.duration)))
+        f = _get_ft_font(self.font_size)
+        text_surf = f.render(self.text, True, self.color)
+        outline_surf = f.render(self.text, True, (0, 0, 0))
+        outline_surf.set_alpha(alpha)
+        text_surf.set_alpha(alpha)
+        rect = text_surf.get_rect(center=(int(sx), int(sy)))
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             screen.blit(outline_surf, rect.move(dx, dy))
         screen.blit(text_surf, rect)
@@ -135,6 +160,24 @@ class GameState:
         except Exception:
             pass
 
+        # 三区域背景（左/中/右 + 过渡条）
+        self.zone_bgs = {}
+        self.zone_transitions = {}
+        try:
+            zone_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images', 'zone_bg')
+            for zone_name in ('left', 'center', 'right'):
+                path = os.path.join(zone_base, f'zone_{zone_name}.png')
+                img = pygame.image.load(path).convert()
+                self.zone_bgs[zone_name] = pygame.transform.smoothscale(img, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            # 过渡条
+            for pair_name in ('left_center', 'center_right'):
+                path = os.path.join(zone_base, f'transition_{pair_name}.png')
+                img = pygame.image.load(path).convert()
+                self.zone_transitions[pair_name] = pygame.transform.smoothscale(img, (ZONE_TRANSITION_WIDTH, SCREEN_HEIGHT))
+        except Exception:
+            self.zone_bgs = {}
+            self.zone_transitions = {}
+
         # Save manager
         self.sm = SaveManager()
         self.sm.load()
@@ -163,6 +206,7 @@ class GameState:
         self.ai_grinder = None
         self.floating_texts = []
         self.level_timer = 0
+        self._elapsed_time = 0.0   # 关卡已过时间（秒），用于AI策略
         self.double_income_active = False
         self.speed_boost_timer = 0
         self.item_uses = {}
@@ -187,6 +231,7 @@ class GameState:
         self.menu_open = False
         self.panel_active = False
         self.panel_type = None
+        self.nest_menu_open = False  # 巢穴快捷道具菜单
         self.shop_toast = None
         self.shop_toast_timer = 0
         self.shop_active = False  # 标题/关卡选择页的商店浮层
@@ -200,6 +245,20 @@ class GameState:
 
         # Scenes（按需实例化，首次访问时创建）
         self._scenes = {}
+
+        # Camera（大地图摄像机系统）
+        self.camera = Camera()
+
+        # 三区域甜点管理器
+        self.zone_manager = None
+
+        # 鼠标拖拽视野状态
+        self._dragging = False
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+        self._drag_camera_start_x = 0.0
+        self._drag_camera_start_y = 0.0
+        self._drag_clicked_on_sweet = False
 
     def _get_scene(self, name):
         """获取或创建场景实例"""
@@ -260,7 +319,36 @@ class GameState:
 
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = event.pos
-                    self._handle_click(mx, my)
+                    # P2: 鼠标拖拽视野 - 检测是否为拖拽起始
+                    if self.state == 'playing' and not self.panel_active and not self.menu_open and not self.nest_menu_open:
+                        self._drag_clicked_on_sweet = False
+                        for sweet in self.sweets:
+                            if sweet.alive:
+                                dist = math.sqrt((mx - sweet.x + self.camera.x) ** 2 + (my - sweet.y + self.camera.y) ** 2)
+                                if dist < sweet.current_size // 2 + 10:
+                                    self._drag_clicked_on_sweet = True
+                                    break
+                        if not self._drag_clicked_on_sweet:
+                            # 不在UI元素上 → 开始拖拽
+                            btn_menu = pygame.Rect(SCREEN_WIDTH - 44, 8, 36, 36)
+                            nest_r = GRINDER_SIZE // 2 + 15
+                            nest_dist = math.sqrt((mx - self.player_grinder.x + self.camera.x) ** 2 + (my - self.player_grinder.y + self.camera.y) ** 2) if self.player_grinder else 999
+                            if not btn_menu.collidepoint(mx, my) and nest_dist > nest_r:
+                                self._dragging = True
+                                self._drag_start_x = mx
+                                self._drag_start_y = my
+                                self._drag_camera_start_x = self.camera.x
+                                self._drag_camera_start_y = self.camera.y
+                    if not self._dragging and not self._drag_clicked_on_sweet:
+                        self._handle_click(mx, my)
+                if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    self._dragging = False
+                if event.type == pygame.MOUSEMOTION and self._dragging:
+                    mx, my = event.pos
+                    dx = self._drag_start_x - mx
+                    dy = self._drag_start_y - my
+                    self.camera.move_to(self._drag_camera_start_x + dx,
+                                        self._drag_camera_start_y + dy)
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):
                     if self.achievement_panel_active:
                         dy = 1 if event.button == 4 else -1
@@ -292,6 +380,12 @@ class GameState:
     # ── Click routing ──
 
     def _handle_click(self, mx, my):
+        # 播放状态下，点击坐标需转为世界坐标
+        if self.state == 'playing':
+            wx, wy = self.camera.screen_to_world(mx, my)
+        else:
+            wx, wy = mx, my
+
         # 成就解锁通知点击（最顶层，优先处理）
         if self.ach_notify_queue.handle_click(mx, my):
             self.ach_notify_queue.clear()
@@ -549,6 +643,52 @@ class GameState:
             return True
         return False
 
+    def _click_nest_menu(self, mx, my):
+        """巢穴快捷道具菜单点击处理。返回True表示点击被消费。"""
+        from items_data import ITEMS
+
+        # 获取可显示的道具（有剩余次数的）
+        nest_items = []
+        for item_def in ITEMS:
+            name = item_def["name"]
+            used = self.item_uses.get(name, 0)
+            if used < item_def["max_uses"]:
+                nest_items.append(item_def)
+
+        if not nest_items:
+            self.nest_menu_open = False
+            return False
+
+        menu_w = 180
+        item_h = 42
+        menu_h = len(nest_items) * item_h + 10
+        gx, gy = self.camera.world_to_screen(self.player_grinder.x, self.player_grinder.y)
+        menu_x = gx - menu_w // 2
+        menu_y = gy - 60 // 2 - 15 - menu_h  # GRINDER_SIZE=60
+
+        # 点击在菜单区域内
+        for i, item_def in enumerate(nest_items):
+            row_rect = pygame.Rect(menu_x, menu_y + 5 + i * item_h, menu_w, item_h)
+            if row_rect.collidepoint(mx, my):
+                name = item_def["name"]
+                cost = item_def["cost"]
+                max_uses = item_def["max_uses"]
+                used = self.item_uses.get(name, 0)
+
+                if used >= max_uses:
+                    return True  # 次数用完，消费点击但不执行
+
+                if self.level_coins < cost:
+                    return True  # 金币不足，消费点击但不执行
+
+                # 购买成功
+                self.level_coins -= cost
+                self.item_uses[name] = used + 1
+                self._apply_item(item_name=name)
+                return True
+
+        return False
+
     # ── Level management ──
 
     def _start_level(self):
@@ -559,68 +699,71 @@ class GameState:
         self.ai_coins = 0
         self.transit_coins = 0
         self.level_timer = self.level_data['timer']
+        self._elapsed_time = 0.0
         self.floating_texts = []
         self.double_income_active = False
         self.speed_boost_timer = 0
         self.item_uses = {}
+        self.nest_menu_open = False
+        self._dragging = False
 
-        # 星级系统：初始化收集率追踪
+        # Camera: 初始视角居中对准中间核心区域
+        self.camera = Camera()
+        self.camera.center_on(WORLD_WIDTH // 2, SCREEN_HEIGHT // 2)
+
+        # 星级系统：初始化收集率追踪（V1.4：三区域各1个甜点）
         sweet_info = self.level_data['sweet']
-        self.total_sweet_hp = sweet_info['hp'] * sweet_info['quantity']
+        self.total_sweet_hp = sweet_info['hp'] * 3
         self.collected_hp = 0
 
         # 1:1镜像：上阵上限受关卡限制
         self.team_size_limit = get_max_team_size(self.current_level)
 
-        # Player ants（全部一次性部署，错开位置）
+        # Player ants（世界坐标：巢穴在中部区域附近）
         self.player_ants = []
         for idx, ant_id in enumerate(self.team):
             carry_lv = self.sm.get_ant_attr(ant_id, 'carry')
             speed_lv = self.sm.get_ant_attr(ant_id, 'speed')
             defense_lv = self.sm.get_ant_attr(ant_id, 'defense')
-            ant = Ant(ant_id, 'player', 50 + idx * 25, SCREEN_HEIGHT - 80 - idx * 25,
+            # 蚂蚁出生在玩家巢穴附近（世界坐标）
+            spawn_x = PLAYER_SPAWN_X_RANGE[0] + idx * 25
+            spawn_y = PLAYER_SPAWN_Y_RANGE[0] + idx * 10
+            ant = Ant(ant_id, 'player', spawn_x, spawn_y,
                       carry_level=carry_lv, speed_level=speed_lv, defense_level=defense_lv,
                       assets=self.assets, terrain=self.level_data['terrain'])
             self.player_ants.append(ant)
 
-        # AI ants（独立梯队池 + 独立属性公式，不镜像玩家种类和等级）
+        # AI ants（世界坐标：巢穴在右侧区域附近）
         self.ai_ants = []
-        ai_count = len(self.team)  # 1:1数量镜像
+        ai_count = len(self.team)
         ai_team_ids = generate_ai_team(self.current_level, ai_count)
         ai_buffs = get_ai_late_buffs(self.current_level)
         for idx, aid in enumerate(ai_team_ids):
             ai_carry, ai_speed, ai_defense = get_ai_ant_stats(aid, self.current_level)
-            ant = Ant(aid, 'ai', SCREEN_WIDTH - 60 - idx * 25, 80 + idx * 25,
+            # AI出生在右侧区域巢穴附近
+            spawn_x = AI_SPAWN_X_RANGE[0] - idx * 25
+            spawn_y = AI_SPAWN_Y_RANGE[0] + idx * 10
+            ant = Ant(aid, 'ai', spawn_x, spawn_y,
                       carry_level=0, speed_level=0, defense_level=0,
                       assets=self.assets, terrain=self.level_data['terrain'])
-            # 用AI独立属性覆盖基础值
             ant.max_storage = ai_carry
             ant.storage = 0
             ant.speed = ai_speed
             ant.defense = ai_defense
-            # 151关后全体敌方额外Buff
             if ai_buffs:
                 ant._ai_terrain_debuff_reduction = ai_buffs.get('terrain_debuff_reduction', 0)
                 ant._ai_stun_reduction = ai_buffs.get('stun_reduction', 0)
             self.ai_ants.append(ant)
 
-        # Sweets
-        self.sweets = []
-        sweet_info = self.level_data['sweet']
-        sweet = Sweet(
-            sweet_type=sweet_info['type'],
-            x=SCREEN_WIDTH // 2,
-            y=300,
-            max_hp=sweet_info['hp'],
-            coin_per=sweet_info['coin_per'],
-            assets=self.assets,
-            quantity=sweet_info['quantity']
-        )
-        self.sweets.append(sweet)
+        # 三区域甜点管理器
+        self.zone_manager = SweetZoneManager(self.level_data, self.assets)
+        self.sweets = self.zone_manager.spawn_initial_sweets()
 
-        # Grinders
-        self.player_grinder = Grinder(x=80, y=SCREEN_HEIGHT - 110, color=(80, 130, 80), label="我方")
-        self.ai_grinder = Grinder(x=SCREEN_WIDTH - 80, y=80, color=(130, 80, 80), label="敌方")
+        # Grinders（世界坐标：我方左区中心，敌方右区中心）
+        self.player_grinder = Grinder(x=PLAYER_NEST_X, y=PLAYER_NEST_Y,
+                                       color=(80, 130, 80), label="我方")
+        self.ai_grinder = Grinder(x=AI_NEST_X, y=AI_NEST_Y,
+                                   color=(130, 80, 80), label="敌方")
 
         # 场景缓存失效（关卡切换后需要重建）
         self._scenes.pop('paused', None)
@@ -631,6 +774,7 @@ class GameState:
         self.panel_active = False
         self.panel_type = None
         self.menu_open = False
+        self.nest_menu_open = False
         target = self.level_data.get('target_coins', 0)
         reward = self.level_data.get('reward_coins', 0)
 
@@ -745,6 +889,7 @@ class GameState:
 
         # Timer
         self.level_timer -= dt
+        self._elapsed_time += dt
         if self.level_timer <= 0:
             self.level_timer = 0
             self._end_level()
@@ -766,6 +911,13 @@ class GameState:
         for ant in self.ai_ants:
             self._update_ant(ant, dt, is_player=False)
 
+        # 三区域甜点刷新（V1.4）
+        if self.zone_manager:
+            new_sweets = self.zone_manager.update(dt)
+            self.sweets.extend(new_sweets)
+            # 清理已消灭的甜点
+            self.sweets = [s for s in self.sweets if s.alive]
+
         # Combat: check collisions between player and AI ants
         self._check_combat()
 
@@ -784,7 +936,14 @@ class GameState:
         if ant.state == Ant.STATE_IDLE:
             alive_sweets = [s for s in self.sweets if s.alive]
             if alive_sweets:
-                ant.target_sweet = min(alive_sweets, key=lambda s: math.hypot(s.x - ant.x, s.y - ant.y))
+                if is_player:
+                    ant.target_sweet = min(alive_sweets, key=lambda s: math.hypot(s.x - ant.x, s.y - ant.y))
+                else:
+                    ant.target_sweet = choose_target_sweet(
+                        ant, alive_sweets, self.zone_manager,
+                        game_time=self._elapsed_time,
+                        ai_ants=self.ai_ants, player_ants=self.player_ants,
+                    )
                 ant.state = Ant.STATE_MOVING_TO_SWEET
             return
 
@@ -825,6 +984,11 @@ class GameState:
                 destroyed = ant.target_sweet.take_damage()
                 ant.storage += 1
                 ant.last_sweet_coin_per = ant.target_sweet.coin_per
+                ant.last_sweet_zone_multiplier = self.zone_manager.get_multiplier_for_sweet(ant.target_sweet) if self.zone_manager else 1.0
+
+                # V1.4：甜点被消灭后触发区域刷新计时器
+                if destroyed and self.zone_manager:
+                    self.zone_manager.on_sweet_destroyed(ant.target_sweet)
 
                 # 星级系统：玩家收集的HP计入统计
                 if is_player:
@@ -842,7 +1006,9 @@ class GameState:
 
             if arrived:
                 coin_per = ant.last_sweet_coin_per
-                coins_earned = ant.storage * coin_per
+                # 应用区域收益倍率（target_sweet已在进入RETURNING时清空，使用缓存的倍率）
+                zone_mult = ant.last_sweet_zone_multiplier
+                coins_earned = int(ant.storage * coin_per * zone_mult)
                 if self.double_income_active and is_player:
                     coins_earned *= 2
                     self.double_income_active = False
@@ -898,8 +1064,8 @@ class GameState:
                         push = 60
                         a_ant.x += dx / d * push
                         a_ant.y += dy / d * push
-                        a_ant.x = max(10, min(SCREEN_WIDTH - 10, a_ant.x))
-                        a_ant.y = max(10, min(SCREEN_HEIGHT - 10, a_ant.y))
+                        a_ant.x = max(10, min(WORLD_WIDTH - 10, a_ant.x))
+                        a_ant.y = max(10, min(WORLD_HEIGHT - 10, a_ant.y))
                         self.floating_texts.append(
                             FloatingText("击退!", a_ant.x, a_ant.y - 20,
                                          (255, 180, 50), 0.6, 14))
@@ -943,8 +1109,8 @@ class GameState:
                         push = 60
                         p_ant.x += dx / d * push
                         p_ant.y += dy / d * push
-                        p_ant.x = max(10, min(SCREEN_WIDTH - 10, p_ant.x))
-                        p_ant.y = max(10, min(SCREEN_HEIGHT - 10, p_ant.y))
+                        p_ant.x = max(10, min(WORLD_WIDTH - 10, p_ant.x))
+                        p_ant.y = max(10, min(WORLD_HEIGHT - 10, p_ant.y))
 
                 # 僵直（冷却1.0秒 + 被动方0.5秒免疫期）
                 sc2 = a_ant.has_stun_chance()
@@ -960,31 +1126,33 @@ class GameState:
 
     def _apply_item(self, item_name):
         """使用道具"""
+        # 道具提示在摄像机中心位置显示
+        center_wx = self.camera.x + SCREEN_WIDTH // 2
+        center_wy = self.camera.y + 100
         if item_name == '加速药水':
             if self.speed_boost_timer > 0:
-                # 已在加速中，仅刷新持续时间，不叠加倍率
                 self.speed_boost_timer = 10.0
                 self.floating_texts.append(
-                    FloatingText("加速效果已刷新! (10秒)", SCREEN_WIDTH // 2, 100,
+                    FloatingText("加速效果已刷新! (10秒)", center_wx, center_wy,
                                  (100, 200, 255), 2.0, 22))
             else:
                 for ant in self.player_ants:
                     ant.speed *= 2.0
                 self.speed_boost_timer = 10.0
                 self.floating_texts.append(
-                    FloatingText("加速药水生效! (10秒)", SCREEN_WIDTH // 2, 100,
+                    FloatingText("加速药水生效! (10秒)", center_wx, center_wy,
                                  (100, 200, 255), 2.0, 22))
         elif item_name == '双倍收益券':
             self.double_income_active = True
             self.floating_texts.append(
-                FloatingText("下次交付双倍!", SCREEN_WIDTH // 2, 100,
+                FloatingText("下次交付双倍!", center_wx, center_wy,
                              (255, 200, 50), 2.0, 22))
         elif item_name == '干扰粉尘':
             for ant in self.ai_ants:
                 ant.stun()
                 ant.stun_timer = 2.0
             self.floating_texts.append(
-                FloatingText("干扰粉尘生效!", SCREEN_WIDTH // 2, 100,
+                FloatingText("干扰粉尘生效!", center_wx, center_wy,
                              (255, 100, 100), 2.0, 22))
 
     # ── Drawing ──
