@@ -9,6 +9,7 @@ ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
 
 # 图片路径映射
 ANT_DIR = os.path.join(ASSETS_DIR, 'ant')
+ANT_PROCESSED_DIR = os.path.join(ASSETS_DIR, 'ant_processed')
 IMAGE_PATHS = {
     'blue_ant_up1': os.path.join(ANT_DIR, 'blue_ant_up1.png'),
     'blue_ant_up2': os.path.join(ANT_DIR, 'blue_ant_up2.png'),
@@ -17,12 +18,12 @@ IMAGE_PATHS = {
     'blue_ant_down2': os.path.join(ANT_DIR, 'blue_ant_down2.png'),
     'blue_ant_down3': os.path.join(ANT_DIR, 'blue_ant_down3.png'),
     'red_ant': os.path.join(ANT_DIR, 'red_ant.png'),
-    # 每只蚂蚁的独立原型图（ant_id → 图片路径）
-    'ant_1': os.path.join(ANT_DIR, 'ant1.png'),
-    'ant_2': os.path.join(ANT_DIR, 'ant2.png'),
-    'ant_3': os.path.join(ANT_DIR, 'ant3.png'),
-    'ant_4': os.path.join(ANT_DIR, 'ant4.png'),
-    'ant_5': os.path.join(ANT_DIR, 'ant5.png'),
+    # 每只蚂蚁的独立原型图（ant_id → 图片路径）—— 优先使用已去背的 RGBA 版本
+    'ant_1': os.path.join(ANT_PROCESSED_DIR, 'ant1.png'),
+    'ant_2': os.path.join(ANT_PROCESSED_DIR, 'ant2.png'),
+    'ant_3': os.path.join(ANT_PROCESSED_DIR, 'ant3.png'),
+    'ant_4': os.path.join(ANT_PROCESSED_DIR, 'ant4.png'),
+    'ant_5': os.path.join(ANT_PROCESSED_DIR, 'ant5.png'),
     'candy_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
     'candy_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
     'candy_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
