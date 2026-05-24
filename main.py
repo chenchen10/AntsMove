@@ -618,6 +618,13 @@ class GameState:
         )
         self.sweets.append(sweet)
 
+        # 启动甜点刷新闪烁（最多3个同时闪烁）
+        flicker_count = 0
+        for s in self.sweets:
+            if s.alive and flicker_count < 3:
+                s.start_flicker()
+                flicker_count += 1
+
         # Grinders
         self.player_grinder = Grinder(x=80, y=SCREEN_HEIGHT - 110, color=(80, 130, 80), label="我方")
         self.ai_grinder = Grinder(x=SCREEN_WIDTH - 80, y=80, color=(130, 80, 80), label="敌方")
@@ -773,6 +780,11 @@ class GameState:
         for ft in self.floating_texts:
             ft.update(dt)
         self.floating_texts = [ft for ft in self.floating_texts if ft.alive]
+
+        # Update sweet flicker effects
+        for sweet in self.sweets:
+            if sweet.alive:
+                sweet.update_flicker(dt)
 
     def _update_ant(self, ant, dt, is_player):
         if ant.state == Ant.STATE_STUNNED:

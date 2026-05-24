@@ -32,6 +32,11 @@ class Sweet(pygame.sprite.Sprite):
         self.current_size = SWEET_SIZE_BASE
         self._update_image()
 
+        # 刷新闪烁效果（新生成时触发）
+        self.flicker_timer = 0.0
+        self.flicker_duration = 1.0  # 总时长1s
+        self.flicker_active = False
+
     def _update_image(self):
         """根据剩余数量选择对应形态的PNG图片"""
         total = self.remaining
@@ -69,12 +74,57 @@ class Sweet(pygame.sprite.Sprite):
         self._update_image()
         return False
 
+    def start_flicker(self):
+        """启动刷新闪烁效果"""
+        self.flicker_active = True
+        self.flicker_timer = 0.0
+
+    def update_flicker(self, dt):
+        """更新闪烁计时器"""
+        if self.flicker_active:
+            self.flicker_timer += dt
+            if self.flicker_timer >= self.flicker_duration:
+                self.flicker_active = False
+                self.flicker_timer = 0.0
+
     def draw_with_hp_effect(self, screen):
-        """绘制甜点 + 数量标签"""
+        """绘制甜点 + 卡通化高光/阴影 + 数量标签"""
         if not self.alive:
             return
 
         screen.blit(self.image, self.rect)
+
+        size = self.current_size
+        cx, cy = self.rect.centerx, self.rect.centery
+
+        # 刷新闪烁效果（2次循环，正弦波渐入渐出）
+        if self.flicker_active:
+            import math
+            progress = self.flicker_timer / self.flicker_duration
+            # 2个循环 = sin(4π * progress)
+            alpha = int(abs(math.sin(4 * math.pi * progress)) * 120)
+            glow_r = size // 2 + 8
+            glow_surf = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
+            sweet_color = SWEET_COLORS.get(self.sweet_type, (200, 200, 200))
+            pygame.draw.circle(glow_surf, (*sweet_color, alpha), (glow_r, glow_r), glow_r)
+            screen.blit(glow_surf, (cx - glow_r, cy - glow_r))
+
+        # 底部阴影（深色半椭圆）
+        shadow_w = int(size * 0.7)
+        shadow_h = int(size * 0.15)
+        shadow_surf = pygame.Surface((shadow_w, shadow_h * 2), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow_surf, (0, 0, 0, 50),
+                            (0, 0, shadow_w, shadow_h * 2))
+        shadow_rect = shadow_surf.get_rect(center=(cx, cy + size // 2 - 2))
+        screen.blit(shadow_surf, shadow_rect)
+
+        # 高光点（左上角白色小圆）
+        hl_r = max(2, int(size * 0.08))
+        hl_x = cx - int(size * 0.2)
+        hl_y = cy - int(size * 0.2)
+        hl_surf = pygame.Surface((hl_r * 2, hl_r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(hl_surf, (255, 255, 255, 180), (hl_r, hl_r), hl_r)
+        screen.blit(hl_surf, (hl_x - hl_r, hl_y - hl_r))
 
         # 数量标签（半透明胶囊 + 手绘× + 数字）
         font = _get_qty_font()

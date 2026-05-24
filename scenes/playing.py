@@ -95,6 +95,17 @@ class PlayingScene:
             overlay.fill((*terrain_color, 30))
             screen.blit(overlay, (0, 0))
 
+            # 三区底色覆盖层（有背景图的关卡不显示）
+            zone_w = SCREEN_WIDTH // 3
+            zone_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            # 左区：浅粉
+            pygame.draw.rect(zone_surf, (255, 200, 220, 50), (0, 0, zone_w, SCREEN_HEIGHT))
+            # 中区：浅绿
+            pygame.draw.rect(zone_surf, (180, 230, 160, 50), (zone_w, 0, zone_w, SCREEN_HEIGHT))
+            # 右区：浅黄
+            pygame.draw.rect(zone_surf, (255, 220, 120, 50), (zone_w * 2, 0, SCREEN_WIDTH - zone_w * 2, SCREEN_HEIGHT))
+            screen.blit(zone_surf, (0, 0))
+
         # ── 顶部信息栏 ──
         minutes = int(ctx.level_timer) // 60
         seconds = int(ctx.level_timer) % 60
