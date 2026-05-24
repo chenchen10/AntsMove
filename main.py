@@ -281,6 +281,8 @@ class GameState:
                             self.level_select_ui.page = min(
                                 self.level_select_ui.total_pages - 1,
                                 self.level_select_ui.page + 1)
+                if event.type == pygame.MOUSEWHEEL:
+                    self._handle_scroll(event.x, event.y)
 
             self.update(dt)
             self.draw()
@@ -288,6 +290,44 @@ class GameState:
 
         pygame.quit()
         sys.exit()
+
+    # ── Scroll routing ──
+
+    def _handle_scroll(self, scroll_x, scroll_y):
+        """处理触控板/滚轮滚动事件。
+
+        scroll_x: 水平滚动量（触控板双指左右滑动）
+        scroll_y: 垂直滚动量（触控板双指上下滑动 / 物理滚轮）
+        """
+        if self.achievement_panel_active:
+            if scroll_y != 0:
+                self.achievement_ui.scroll(scroll_y)
+        elif self.task_panel_active:
+            if scroll_y != 0:
+                self.task_ui.scroll(scroll_y)
+        elif self.checkin_panel_active:
+            if scroll_y != 0:
+                self.checkin_ui.scroll(scroll_y)
+        elif self.shop_active or (self.panel_active and self.panel_type == 'shop'):
+            if scroll_y != 0:
+                self.shop_ui.scroll(scroll_y)
+        elif self.state == 'level_select':
+            if scroll_x != 0:
+                # 触控板水平滑动：左右翻页
+                if scroll_x < 0:
+                    self.level_select_ui.page = max(0, self.level_select_ui.page - 1)
+                else:
+                    self.level_select_ui.page = min(
+                        self.level_select_ui.total_pages - 1,
+                        self.level_select_ui.page + 1)
+            elif scroll_y != 0:
+                # 垂直滚动也支持翻页
+                if scroll_y > 0:
+                    self.level_select_ui.page = max(0, self.level_select_ui.page - 1)
+                else:
+                    self.level_select_ui.page = min(
+                        self.level_select_ui.total_pages - 1,
+                        self.level_select_ui.page + 1)
 
     # ── Click routing ──
 
