@@ -784,6 +784,9 @@ class GameState:
         if ant.state == Ant.STATE_IDLE:
             alive_sweets = [s for s in self.sweets if s.alive]
             if alive_sweets:
+                # 玩家蚂蚁与AI蚂蚁均使用最近距离选择目标糖果（设计意图，非遗漏）
+                # 玩家侧：手动精准指挥 + 空闲就近拾取（简单可预期）
+                # AI侧：同逻辑，通过兵力分配和属性差异体现智能差异
                 ant.target_sweet = min(alive_sweets, key=lambda s: math.hypot(s.x - ant.x, s.y - ant.y))
                 ant.state = Ant.STATE_MOVING_TO_SWEET
             return
