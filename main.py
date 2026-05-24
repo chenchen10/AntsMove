@@ -12,7 +12,6 @@ import os
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, FPS,
     SWEET_COLORS, WHITE, ZONE_CONFIG, GRINDER_SIZE,
-    ZONE_TRANSITION_WIDTH,
 )
 from region import (
     PLAYER_NEST_X, PLAYER_NEST_Y, AI_NEST_X, AI_NEST_Y,
@@ -160,23 +159,17 @@ class GameState:
         except Exception:
             pass
 
-        # 三区域背景（左/中/右 + 过渡条）
+        # 三区域背景（统一使用 background_three.png）
         self.zone_bgs = {}
         self.zone_transitions = {}
         try:
-            zone_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images', 'zone_bg')
+            bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images', 'background', 'background_three.png')
+            img = pygame.image.load(bg_path).convert()
+            scaled = pygame.transform.smoothscale(img, (SCREEN_WIDTH, SCREEN_HEIGHT))
             for zone_name in ('left', 'center', 'right'):
-                path = os.path.join(zone_base, f'zone_{zone_name}.png')
-                img = pygame.image.load(path).convert()
-                self.zone_bgs[zone_name] = pygame.transform.smoothscale(img, (SCREEN_WIDTH, SCREEN_HEIGHT))
-            # 过渡条
-            for pair_name in ('left_center', 'center_right'):
-                path = os.path.join(zone_base, f'transition_{pair_name}.png')
-                img = pygame.image.load(path).convert()
-                self.zone_transitions[pair_name] = pygame.transform.smoothscale(img, (ZONE_TRANSITION_WIDTH, SCREEN_HEIGHT))
+                self.zone_bgs[zone_name] = scaled
         except Exception:
             self.zone_bgs = {}
-            self.zone_transitions = {}
 
         # Save manager
         self.sm = SaveManager()
@@ -349,6 +342,30 @@ class GameState:
                     dy = self._drag_start_y - my
                     self.camera.move_to(self._drag_camera_start_x + dx,
                                         self._drag_camera_start_y + dy)
+                # 触控板双指滑动：横向移动相机，纵向滚动UI面板
+                if event.type == pygame.MOUSEWHEEL:
+                    if self.state == 'playing' and not self.panel_active and not self.menu_open and not self.nest_menu_open:
+                        # 横向双指滑动 → 左右移动相机
+                        if event.x != 0:
+                            self.camera.move_by(-event.x * 5, 0)
+                        # 纵向双指滑动 → 也移动相机（与横向逻辑一致）
+                        if event.y != 0:
+                            self.camera.move_by(0, -event.y * 5)
+                    elif self.achievement_panel_active:
+                        self.achievement_ui.scroll(event.y)
+                    elif self.task_panel_active:
+                        self.task_ui.scroll(event.y)
+                    elif self.checkin_panel_active:
+                        self.checkin_ui.scroll(event.y)
+                    elif self.shop_active or (self.panel_active and self.panel_type == 'shop'):
+                        self.shop_ui.scroll(event.y)
+                    elif self.state == 'level_select':
+                        if event.y > 0:
+                            self.level_select_ui.page = max(0, self.level_select_ui.page - 1)
+                        elif event.y < 0:
+                            self.level_select_ui.page = min(
+                                self.level_select_ui.total_pages - 1,
+                                self.level_select_ui.page + 1)
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):
                     if self.achievement_panel_active:
                         dy = 1 if event.button == 4 else -1
@@ -917,6 +934,10 @@ class GameState:
             self.sweets.extend(new_sweets)
             # 清理已消灭的甜点
             self.sweets = [s for s in self.sweets if s.alive]
+            # 更新甜点闪烁动画
+            for sweet in self.sweets:
+                if sweet.alive:
+                    sweet.update_blink(dt)
 
         # Combat: check collisions between player and AI ants
         self._check_combat()

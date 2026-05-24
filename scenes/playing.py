@@ -7,26 +7,57 @@ from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     GRAY, BG_COLOR, TEXT_COLOR,
     CARD_BG, CARD_BORDER, ACCENT_BLUE, ACCENT_RED, ACCENT_GOLD, BTN_HOVER,
+    GRINDER_SIZE,
+    ZONE_CONFIG, ZONE_THEME_COLORS,
+    GLOW_SIZE, GLOW_ALPHA_BASE, GLOW_ALPHA_RANGE, GLOW_FREQ,
+    GLOW_COLOR_PLAYER, GLOW_COLOR_AI,
 )
 from ants_data import ANT_BY_ID
 from ant_sprite import Ant
 from ui_elements import draw_card, draw_button
+from ui_minimap import MiniMap
 import font_helper
 
 
 class PlayingScene:
     def __init__(self, ctx):
         self.ctx = ctx
+        self.minimap = MiniMap()
 
     # ── Click ──
 
     def handle_click(self, mx, my):
         ctx = self.ctx
+        cam = ctx.camera
+
+        # ── 小地图点击跳转 ──
+        if self.minimap.handle_click(mx, my, cam):
+            return
+
+        # ── 巢穴快捷道具菜单 toggle ──
+        nest_r = GRINDER_SIZE // 2 + 15  # 45px
+        nest_dist = math.sqrt((mx - ctx.player_grinder.x + cam.x) ** 2 + (my - ctx.player_grinder.y + cam.y) ** 2)
+        if nest_dist <= nest_r:
+            ctx.nest_menu_open = not ctx.nest_menu_open
+            # 打开菜单时关闭商店面板
+            if ctx.nest_menu_open:
+                ctx.panel_active = False
+                ctx.panel_type = None
+            return
+
+        # ── 巢穴菜单内部点击 ──
+        if ctx.nest_menu_open:
+            consumed = ctx._click_nest_menu(mx, my)
+            if consumed:
+                return
+            # 点击菜单外部 → 关闭菜单，穿透给底层
+            ctx.nest_menu_open = False
 
         # Hamburger menu
         btn_menu = pygame.Rect(SCREEN_WIDTH - 44, 8, 36, 36)
         if btn_menu.collidepoint(mx, my):
             ctx.menu_open = not ctx.menu_open
+            ctx.nest_menu_open = False  # 打开汉堡菜单时关闭巢穴菜单
             return
 
         if ctx.menu_open:
@@ -57,7 +88,7 @@ class PlayingScene:
         for sweet in ctx.sweets:
             if not sweet.alive:
                 continue
-            dist = math.sqrt((mx - sweet.x) ** 2 + (my - sweet.y) ** 2)
+            dist = math.sqrt((mx - sweet.x + cam.x) ** 2 + (my - sweet.y + cam.y) ** 2)
             if dist < sweet.current_size // 2 + 10:
                 for ant in ctx.player_ants:
                     if ant.state == Ant.STATE_STUNNED or ant.state == Ant.STATE_RETURNING:
@@ -77,23 +108,22 @@ class PlayingScene:
 
     def _draw_playing(self, screen):
         ctx = self.ctx
+        cam = ctx.camera
 
-        # Background（按关卡轮训背景图）
-        if ctx.level_bgs:
-            bg_count = len(ctx.level_bgs)
-            bg_idx = (ctx.current_level - 1) % bg_count
-            screen.blit(ctx.level_bgs[bg_idx], (0, 0))
+        # Background（三区域独立背景 + 过渡渐变，跟随摄像机偏移）
+        if ctx.zone_bgs:
+            self._draw_zone_backgrounds(screen, cam)
         else:
             screen.fill(BG_COLOR)
-
-        # Terrain color overlay (skip if level has its own background image)
-        if not ctx.level_bgs:
             terrain = ctx.level_data['terrain']
             from terrain import TERRAIN_COLORS
             terrain_color = TERRAIN_COLORS.get(terrain, (120, 180, 80))
             overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
             overlay.fill((*terrain_color, 30))
             screen.blit(overlay, (0, 0))
+
+        # ── 绘制三区域地面标识 ──
+        self._draw_zone_ground(screen, cam)
 
         # ── 顶部信息栏 ──
         minutes = int(ctx.level_timer) // 60
@@ -111,31 +141,33 @@ class PlayingScene:
         # ── 左下状态栏 ──
         self._draw_status_bar(screen)
 
-        # Draw grinders with glow
-        glow_alpha = int(30 + 20 * math.sin(_time.time() * 2))
+        # Draw grinders with glow (using camera offset)
+        glow_alpha = int(GLOW_ALPHA_BASE + GLOW_ALPHA_RANGE * math.sin(_time.time() * GLOW_FREQ * 2 * math.pi))
 
-        glow_surf = pygame.Surface((60 + 20, 60 + 20), pygame.SRCALPHA)
-        glow_center = (40, 40)
-        pygame.draw.circle(glow_surf, (80, 180, 80, glow_alpha), glow_center, 38)
-        glow_rect = glow_surf.get_rect(center=(ctx.player_grinder.x, ctx.player_grinder.y))
-        screen.blit(glow_surf, glow_rect)
-        ctx.player_grinder.draw(screen)
+        # 玩家巢穴
+        px, py = cam.world_to_screen(ctx.player_grinder.x, ctx.player_grinder.y)
+        glow_surf = pygame.Surface((GLOW_SIZE, GLOW_SIZE), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*GLOW_COLOR_PLAYER, glow_alpha), (GLOW_SIZE // 2, GLOW_SIZE // 2), GLOW_SIZE // 2)
+        screen.blit(glow_surf, (int(px - GLOW_SIZE // 2), int(py - GLOW_SIZE // 2)))
+        cam.draw_at(ctx.player_grinder.image, ctx.player_grinder.x, ctx.player_grinder.y, screen)
         label_font = font_helper.get_font(22)
         label_p = label_font.render("我方", True, ACCENT_BLUE)
-        screen.blit(label_p, (ctx.player_grinder.x - label_p.get_width() // 2,
-                               ctx.player_grinder.y - 35))
+        screen.blit(label_p, (int(px - label_p.get_width() // 2), int(py - 35)))
 
-        glow_surf2 = pygame.Surface((60 + 20, 60 + 20), pygame.SRCALPHA)
-        pygame.draw.circle(glow_surf2, (180, 80, 80, glow_alpha), glow_center, 38)
-        glow_rect2 = glow_surf2.get_rect(center=(ctx.ai_grinder.x, ctx.ai_grinder.y))
-        screen.blit(glow_surf2, glow_rect2)
-        ctx.ai_grinder.draw(screen)
+        # 敌方巢穴
+        ax, ay = cam.world_to_screen(ctx.ai_grinder.x, ctx.ai_grinder.y)
+        glow_surf2 = pygame.Surface((GLOW_SIZE, GLOW_SIZE), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf2, (*GLOW_COLOR_AI, glow_alpha), (GLOW_SIZE // 2, GLOW_SIZE // 2), GLOW_SIZE // 2)
+        screen.blit(glow_surf2, (int(ax - GLOW_SIZE // 2), int(ay - GLOW_SIZE // 2)))
+        cam.draw_at(ctx.ai_grinder.image, ctx.ai_grinder.x, ctx.ai_grinder.y, screen)
         label_a = label_font.render("敌方", True, ACCENT_RED)
-        screen.blit(label_a, (ctx.ai_grinder.x - label_a.get_width() // 2,
-                               ctx.ai_grinder.y + 38))
+        screen.blit(label_a, (int(ax - label_a.get_width() // 2), int(ay + 38)))
 
         # ── 右侧排行榜 ──
         self._draw_leaderboard(screen)
+
+        # ── 迷你小地图（右下角） ──
+        self.minimap.draw(screen, ctx)
 
         # ── 右上菜单按钮 ──
         btn_menu = pygame.Rect(SCREEN_WIDTH - 44, 8, 36, 36)
@@ -165,31 +197,37 @@ class PlayingScene:
                 screen.blit(txt, (item_rect.centerx - txt.get_width() // 2,
                                    item_rect.centery - txt.get_height() // 2))
 
-        # Draw sweets
+        # ── 巢穴快捷道具菜单 ──
+        if ctx.nest_menu_open:
+            self._draw_nest_menu(screen, cam)
+
+        # Draw sweets (with camera offset)
         for sweet in ctx.sweets:
             if sweet.alive:
-                sweet.draw_with_hp_effect(screen)
+                sweet.draw_with_hp_effect(screen, camera=cam)
 
-        # Draw player ants
+        # Draw player ants (with camera offset)
         mx, my = pygame.mouse.get_pos()
         hover_ant = None
         for ant in ctx.player_ants:
-            screen.blit(ant.image, ant.rect)
-            ant.draw_storage_bar(screen)
-            ant.draw_stun_indicator(screen, ctx.font_tiny)
-            ant.draw_level_badge(screen, ctx.font_tiny)
-            if ant.rect.collidepoint(mx, my):
+            ant_sx, ant_sy = cam.world_to_screen(ant.x, ant.y)
+            screen.blit(ant.image, ant.image.get_rect(center=(int(ant_sx), int(ant_sy))))
+            ant.draw_storage_bar_at(screen, cam)
+            ant.draw_stun_indicator_at(screen, ctx.font_tiny, cam)
+            ant.draw_level_badge_at(screen, ctx.font_tiny, cam)
+            if ant.image.get_rect(center=(int(ant_sx), int(ant_sy))).collidepoint(mx, my):
                 hover_ant = ant
 
-        # Draw AI ants
+        # Draw AI ants (with camera offset)
         for ant in ctx.ai_ants:
-            screen.blit(ant.image, ant.rect)
-            ant.draw_storage_bar(screen)
-            ant.draw_stun_indicator(screen, ctx.font_tiny)
-            if ant.rect.collidepoint(mx, my):
+            ant_sx, ant_sy = cam.world_to_screen(ant.x, ant.y)
+            screen.blit(ant.image, ant.image.get_rect(center=(int(ant_sx), int(ant_sy))))
+            ant.draw_storage_bar_at(screen, cam)
+            ant.draw_stun_indicator_at(screen, ctx.font_tiny, cam)
+            if ant.image.get_rect(center=(int(ant_sx), int(ant_sy))).collidepoint(mx, my):
                 hover_ant = ant
 
-        # Hover tooltip
+        # Hover tooltip (screen coordinates, no camera offset needed)
         if hover_ant:
             name = hover_ant.ant_data['name']
             role = hover_ant.ant_data['role']
@@ -205,9 +243,9 @@ class PlayingScene:
             screen.blit(tip_bg, (tip_x, tip_y))
             screen.blit(tip_surf, (tip_x + 6, tip_y + 4))
 
-        # Draw floating texts
+        # Draw floating texts (with camera offset)
         for ft in ctx.floating_texts:
-            ft.draw(screen, ctx.font_small)
+            ft.draw_at_screen(screen, ctx.font_small, cam)
 
     def _draw_status_bar(self, screen):
         """左下角状态栏：上阵总数、总搬运量、平均速度"""
@@ -263,6 +301,149 @@ class PlayingScene:
         pygame.draw.circle(screen, ACCENT_RED, (dot_x, dot_y2), dot_r)
         a_txt = ctx.font_tiny.render(f"对方金币: {ctx.ai_coins}", True, TEXT_COLOR)
         screen.blit(a_txt, (dot_x + dot_r + 6, dot_y2 - a_txt.get_height() // 2))
+
+    # ── 巢穴快捷道具菜单 ──
+
+    def _get_nest_menu_items(self):
+        """获取巢穴菜单中可显示的道具列表（有剩余次数的）"""
+        from items_data import ITEMS
+        ctx = self.ctx
+        items = []
+        for item_def in ITEMS:
+            name = item_def["name"]
+            used = ctx.item_uses.get(name, 0)
+            if used < item_def["max_uses"]:
+                items.append(item_def)
+        return items
+
+    def _draw_nest_menu(self, screen, cam=None):
+        """绘制巢穴上方的快捷道具菜单"""
+        from items_data import ITEMS
+        ctx = self.ctx
+
+        nest_items = self._get_nest_menu_items()
+        if not nest_items:
+            ctx.nest_menu_open = False
+            return
+
+        menu_w = 180
+        item_h = 42
+        menu_h = len(nest_items) * item_h + 10
+        # 菜单固定在巢穴正上方（世界坐标 → 屏幕坐标）
+        if cam:
+            gx, gy = cam.world_to_screen(ctx.player_grinder.x, ctx.player_grinder.y)
+        else:
+            gx, gy = ctx.player_grinder.x, ctx.player_grinder.y
+        menu_x = gx - menu_w // 2
+        menu_y = gy - GRINDER_SIZE // 2 - 15 - menu_h
+
+        # 菜单背景
+        menu_rect = pygame.Rect(menu_x, menu_y, menu_w, menu_h)
+        draw_card(screen, menu_rect, bg_color=CARD_BG, border_color=CARD_BORDER,
+                  shadow=True, radius=10)
+
+        mx, my = pygame.mouse.get_pos()
+
+        for i, item_def in enumerate(nest_items):
+            row_rect = pygame.Rect(menu_x, menu_y + 5 + i * item_h, menu_w, item_h)
+            hover = row_rect.collidepoint(mx, my)
+
+            if hover:
+                pygame.draw.rect(screen, BTN_HOVER, row_rect, border_radius=6)
+
+            name = item_def["name"]
+            cost = item_def["cost"]
+            used = ctx.item_uses.get(name, 0)
+            max_uses = item_def["max_uses"]
+            affordable = ctx.level_coins >= cost
+
+            name_font = font_helper.get_font(14)
+            name_surf = name_font.render(name, True, TEXT_COLOR if affordable else GRAY)
+            screen.blit(name_surf, (row_rect.x + 10, row_rect.centery - name_surf.get_height() // 2))
+
+            price_font = font_helper.get_font(14)
+            price_color = ACCENT_GOLD if affordable else ACCENT_RED
+            price_surf = price_font.render(f"{cost}G", True, price_color)
+            screen.blit(price_surf, (row_rect.right - 60, row_rect.centery - price_surf.get_height() // 2))
+
+            uses_font = font_helper.get_font(12)
+            uses_surf = uses_font.render(f"剩余{max_uses - used}/{max_uses}", True, GRAY)
+            screen.blit(uses_surf, (row_rect.right - 60, row_rect.centery + 4))
+
+    def _draw_zone_backgrounds(self, screen, cam):
+        """绘制三区域统一背景，跟随Camera水平滚动"""
+        ctx = self.ctx
+        zone_bg_list = [
+            ('left',   0),
+            ('center', SCREEN_WIDTH),
+            ('right',  SCREEN_WIDTH * 2),
+        ]
+
+        for zone_name, zone_x in zone_bg_list:
+            bg = ctx.zone_bgs.get(zone_name)
+            if not bg:
+                continue
+            # 世界坐标 → 屏幕坐标
+            sx, sy = cam.world_to_screen(zone_x, 0)
+            # 只绘制屏幕内可见的背景
+            if sx > SCREEN_WIDTH or sx + SCREEN_WIDTH < 0:
+                continue
+            screen.blit(bg, (int(sx), int(sy)))
+
+    def _draw_zone_ground(self, screen, cam):
+        """绘制三区域标注标签：半透明胶囊样式"""
+        ctx = self.ctx
+        zones = [
+            ('left',   '基础区 ×1.0', ZONE_THEME_COLORS.get('left', (255, 200, 220))),
+            ('center', '稀有区 ×1.5', ZONE_THEME_COLORS.get('center', (180, 230, 160))),
+            ('right',  '基础区 ×1.0', ZONE_THEME_COLORS.get('right', (255, 220, 120))),
+        ]
+        label_font = font_helper.get_font(14)
+        padding_x, padding_y = 12, 5
+        capsule_h = 24
+
+        for zone_name, label_text, theme_color in zones:
+            cfg = ZONE_CONFIG[zone_name]
+            x_min, x_max = cfg['x_range']
+
+            # 区域分隔线（细虚线效果）
+            sx1, sy1 = cam.world_to_screen(x_min, 0)
+            sx2, sy2 = cam.world_to_screen(x_min, SCREEN_HEIGHT)
+            line_color = (theme_color[0] // 2, theme_color[1] // 2, theme_color[2] // 2)
+            if -5 < sx1 < SCREEN_WIDTH + 5:
+                # 绘制半透明分隔线
+                line_surf = pygame.Surface((2, SCREEN_HEIGHT), pygame.SRCALPHA)
+                line_surf.fill((*line_color, 100))
+                screen.blit(line_surf, (int(sx1), 0))
+
+            # 区域标签（半透明胶囊）
+            cx = (x_min + x_max) // 2
+            lbl = label_font.render(label_text, True, (255, 255, 255))
+            lbl_w = lbl.get_width()
+            lbl_h = lbl.get_height()
+            capsule_w = lbl_w + padding_x * 2
+            capsule_h_actual = lbl_h + padding_y * 2
+
+            lx, ly = cam.world_to_screen(cx - capsule_w // 2, SCREEN_HEIGHT * 0.85)
+
+            # 仅绘制在屏幕内的标签
+            if -capsule_w - 50 < lx < SCREEN_WIDTH + 50:
+                # 半透明胶囊背景
+                capsule_surf = pygame.Surface((capsule_w, capsule_h_actual), pygame.SRCALPHA)
+                # 主体颜色（半透明）
+                bg_alpha = 140
+                capsule_color = (theme_color[0], theme_color[1], theme_color[2], bg_alpha)
+                pygame.draw.rect(capsule_surf, capsule_color, (0, 0, capsule_w, capsule_h_actual),
+                                 border_radius=capsule_h_actual // 2)
+                # 边框
+                border_color = (255, 255, 255, 100)
+                pygame.draw.rect(capsule_surf, border_color, (0, 0, capsule_w, capsule_h_actual),
+                                 width=1, border_radius=capsule_h_actual // 2)
+                screen.blit(capsule_surf, (int(lx), int(ly)))
+                # 文字
+                text_x = lx + padding_x
+                text_y = ly + padding_y
+                screen.blit(lbl, (int(text_x), int(text_y)))
 
     def _draw_panel(self, screen):
         ctx = self.ctx
