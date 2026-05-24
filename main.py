@@ -159,17 +159,15 @@ class GameState:
         except Exception:
             pass
 
-        # 三区域背景（统一使用 background_three.png）
-        self.zone_bgs = {}
-        self.zone_transitions = {}
+        # 三区域背景（统一使用 background_three.png，一张图覆盖三区域）
+        self.zone_bg_full = None
         try:
             bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images', 'background', 'background_three.png')
             img = pygame.image.load(bg_path).convert()
-            scaled = pygame.transform.smoothscale(img, (SCREEN_WIDTH, SCREEN_HEIGHT))
-            for zone_name in ('left', 'center', 'right'):
-                self.zone_bgs[zone_name] = scaled
+            # 缩放到整个世界宽度（3600×700），一张图覆盖三区域
+            self.zone_bg_full = pygame.transform.smoothscale(img, (WORLD_WIDTH, SCREEN_HEIGHT))
         except Exception:
-            self.zone_bgs = {}
+            self.zone_bg_full = None
 
         # Save manager
         self.sm = SaveManager()

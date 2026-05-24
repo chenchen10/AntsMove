@@ -110,8 +110,8 @@ class PlayingScene:
         ctx = self.ctx
         cam = ctx.camera
 
-        # Background（三区域独立背景 + 过渡渐变，跟随摄像机偏移）
-        if ctx.zone_bgs:
+        # Background（三区域统一背景，一张图覆盖三区域，跟随摄像机偏移）
+        if getattr(ctx, 'zone_bg_full', None):
             self._draw_zone_backgrounds(screen, cam)
         else:
             screen.fill(BG_COLOR)
@@ -371,24 +371,13 @@ class PlayingScene:
             screen.blit(uses_surf, (row_rect.right - 60, row_rect.centery + 4))
 
     def _draw_zone_backgrounds(self, screen, cam):
-        """绘制三区域统一背景，跟随Camera水平滚动"""
-        ctx = self.ctx
-        zone_bg_list = [
-            ('left',   0),
-            ('center', SCREEN_WIDTH),
-            ('right',  SCREEN_WIDTH * 2),
-        ]
-
-        for zone_name, zone_x in zone_bg_list:
-            bg = ctx.zone_bgs.get(zone_name)
-            if not bg:
-                continue
-            # 世界坐标 → 屏幕坐标
-            sx, sy = cam.world_to_screen(zone_x, 0)
-            # 只绘制屏幕内可见的背景
-            if sx > SCREEN_WIDTH or sx + SCREEN_WIDTH < 0:
-                continue
-            screen.blit(bg, (int(sx), int(sy)))
+        """绘制三区域统一背景（一张图覆盖三区域），跟随Camera水平滚动"""
+        bg = getattr(self.ctx, 'zone_bg_full', None)
+        if not bg:
+            return
+        # 世界坐标 → 屏幕坐标（背景从世界原点开始）
+        sx, sy = cam.world_to_screen(0, 0)
+        screen.blit(bg, (int(sx), int(sy)))
 
     def _draw_zone_ground(self, screen, cam):
         """绘制三区域标注标签：半透明胶囊样式"""
