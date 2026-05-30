@@ -40,21 +40,22 @@ IMAGE_PATHS = {
     'candy_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
     'candy_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
     'candy_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
-    'cookie_full': os.path.join(ASSETS_DIR, 'cookie', 'cookie_full.png'),
-    'cookie_60': os.path.join(ASSETS_DIR, 'cookie', 'cookie_60.png'),
-    'cookie_30': os.path.join(ASSETS_DIR, 'cookie', 'cookie_30.png'),
-    'cake_full': os.path.join(ASSETS_DIR, 'cake', 'cake_full.png'),
-    'cake_60': os.path.join(ASSETS_DIR, 'cake', 'cake_60.png'),
-    'cake_30': os.path.join(ASSETS_DIR, 'cake', 'cake_30.png'),
-    'donut_full': os.path.join(ASSETS_DIR, 'donut', 'donut_full.png'),
-    'donut_60': os.path.join(ASSETS_DIR, 'donut', 'donut_60.png'),
-    'donut_30': os.path.join(ASSETS_DIR, 'donut', 'donut_30.png'),
-    'cream_cup_full': os.path.join(ASSETS_DIR, 'cream_cup', 'cream_cup_full.png'),
-    'cream_cup_60': os.path.join(ASSETS_DIR, 'cream_cup', 'cream_cup_60.png'),
-    'cream_cup_30': os.path.join(ASSETS_DIR, 'cream_cup', 'cream_cup_30.png'),
-    'chocolate_full': os.path.join(ASSETS_DIR, 'chocolate', 'chocolate_full.png'),
-    'chocolate_60': os.path.join(ASSETS_DIR, 'chocolate', 'chocolate_60.png'),
-    'chocolate_30': os.path.join(ASSETS_DIR, 'chocolate', 'chocolate_30.png'),
+    # cookie/cake/donut/cream_cup/chocolate 暂时复用 candy 目录素材
+    'cookie_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'cookie_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'cookie_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'cake_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'cake_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'cake_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'donut_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'donut_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'donut_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'cream_cup_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'cream_cup_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'cream_cup_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'chocolate_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'chocolate_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'chocolate_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
     # 新手引导素材
     'guide_overlay': os.path.join(ASSETS_DIR, 'guide', 'guide_overlay.png'),
     'guide_circle': os.path.join(ASSETS_DIR, 'guide', 'guide_circle.png'),
@@ -207,12 +208,33 @@ def _generate_fallback(key):
     return surf
 
 
-def _remove_background(surf):
-    """去除白色/浅色背景，使用 flood-fill 从四角向内填充去除连通的背景像素。
+def _is_already_transparent(surf):
+    """检测图片是否已经有良好的透明通道（采样检测，加速）"""
+    w, h = surf.get_size()
+    total = w * h
+    if total == 0:
+        return False
+    sample_step = max(1, min(w, h) // 20)
+    transparent = 0
+    sampled = 0
+    for y in range(0, h, sample_step):
+        for x in range(0, w, sample_step):
+            sampled += 1
+            _, _, _, a = surf.get_at((x, y))
+            if a < 128:
+                transparent += 1
+    return sampled > 0 and transparent / sampled > 0.3
 
-    策略：从四个角落开始 flood-fill，将与背景色相近的连通像素全部标为透明。
-    比逐像素匹配更可靠，能正确处理 anti-aliasing 产生的半透明边缘像素。
+
+def _remove_background(surf):
+    """去除白色/浅色背景。对于已有透明通道的PNG（如deco素材），跳过处理。
+
+    对于不透明图片，使用 flood-fill 从四角向内填充去除连通的背景像素。
     """
+    # 如果图片已经有良好的透明通道（RGBA PNG），不做处理
+    if _is_already_transparent(surf):
+        return surf
+
     w, h = surf.get_size()
     if w == 0 or h == 0:
         return surf

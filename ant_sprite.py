@@ -280,16 +280,20 @@ class Ant(pygame.sprite.Sprite):
     def _avoid_obstacles(self, new_x, new_y, dir_x, dir_y, move_dist):
         """碰撞绕行：沿路径逐段检测，碰撞时尝试绕行或沿障碍物表面滑动"""
         ant_radius = self.size // 2
-        step = max(ant_radius, 4)  # 采样步长
+        step = max(ant_radius // 2, 4)  # 采样步长（缩小为半径一半，更精细）
         total_dist = math.sqrt((new_x - self.x) ** 2 + (new_y - self.y) ** 2)
 
         def _path_clear(sx, sy, ex, ey):
-            """检查从(sx,sy)到(ex,ey)的路径是否无障碍"""
+            """检查从(sx,sy)到(ex,ey)的路径+终点是否无障碍"""
             d = math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2)
+            # 先检查终点
+            for obs in self.obstacles:
+                if obs.check_collision(ex, ey, ant_radius):
+                    return False
             if d < 1:
                 return True
             n = max(1, int(d / step))
-            for i in range(1, n + 1):
+            for i in range(1, n):
                 t = i / n
                 cx = sx + (ex - sx) * t
                 cy = sy + (ey - sy) * t
@@ -302,67 +306,91 @@ class Ant(pygame.sprite.Sprite):
         if _path_clear(self.x, self.y, new_x, new_y):
             return new_x, new_y
 
-        # 阶段1：尝试8个方向绕行（原方向两侧各4个角度）
-        best_x, best_y = new_x, new_y
-        best_dist = float('inf')
+        # 阶段1：尝试多个角度绕行（更多角度、不同距离）
+        best_x, best_y = None, None
+        best_angle = float('inf')
 
-        for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2]:
-            cos_a = math.cos(angle_offset)
-            sin_a = math.sin(angle_offset)
-            test_dir_x = dir_x * cos_a - dir_y * sin_a
-            test_dir_y = dir_x * sin_a + dir_y * cos_a
-            test_x = self.x + test_dir_x * total_dist
-            test_y = self.y + test_dir_y * total_dist
+        # 先尝试不同距离的绕行
+        for dist_frac in [1.0, 0.7, 0.5, 0.3]:
+            test_dist = total_dist * dist_frac
+            if test_dist < step:
+                continue
+            for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]:
+                cos_a = math.cos(angle_offset)
+                sin_a = math.sin(angle_offset)
+                test_dir_x = dir_x * cos_a - dir_y * sin_a
+                test_dir_y = dir_x * sin_a + dir_y * cos_a
+                test_x = self.x + test_dir_x * test_dist
+                test_y = self.y + test_dir_y * test_dist
 
-            if _path_clear(self.x, self.y, test_x, test_y):
-                d = abs(angle_offset)
-                if d < best_dist:
-                    best_dist = d
-                    best_x, best_y = test_x, test_y
+                if 10 < test_x < 4190 and 10 < test_y < 840:
+                    if _path_clear(self.x, self.y, test_x, test_y):
+                        d = abs(angle_offset)
+                        if d < best_angle:
+                            best_angle = d
+                            best_x, best_y = test_x, test_y
 
-        if best_dist < float('inf'):
+        if best_x is not None:
             return best_x, best_y
 
-        # 阶段2：所有完整方向都 blocked → 沿障碍物表面滑动
-        slide_dist = min(total_dist, ant_radius * 2)
-        perp_x = -dir_y
-        perp_y = dir_x
-
-        for sign in [1, -1]:
-            for frac in [0.8, 0.5]:
-                sx = self.x + perp_x * sign * slide_dist * frac
-                sy = self.y + perp_y * sign * slide_dist * frac
-                if 10 < sx < 4190 and 10 < sy < 840:
-                    if _path_clear(self.x, self.y, sx, sy):
-                        return sx, sy
-
-        # 阶段3：沿原方向前进一小段（半步）
-        half_x = self.x + dir_x * step * 2
-        half_y = self.y + dir_y * step * 2
-        if 10 < half_x < 4190 and 10 < half_y < 840:
-            if _path_clear(self.x, self.y, half_x, half_y):
-                return half_x, half_y
-
-        # 阶段4：被完全卡住 → 沿最近障碍物推开
+        # 阶段2：沿最近障碍物的表面滑动
         nearest_obs = None
         nearest_dist = float('inf')
         for obs in self.obstacles:
-            dx = self.x - obs.x
-            dy = self.y - obs.y
-            d = math.sqrt(dx * dx + dy * dy)
+            if not obs.collidable:
+                continue
+            cx = max(obs.rect.left, min(self.x, obs.rect.right))
+            cy = max(obs.rect.top, min(self.y, obs.rect.bottom))
+            d = math.hypot(self.x - cx, self.y - cy)
             if d < nearest_dist:
                 nearest_dist = d
                 nearest_obs = obs
-        if nearest_obs and nearest_dist > 0:
-            push_x = (self.x - nearest_obs.x) / nearest_dist
-            push_y = (self.y - nearest_obs.y) / nearest_dist
-            push_dist = ant_radius * 2
-            for frac in [1.0, 0.5, 0.25]:
-                px = self.x + push_x * push_dist * frac
-                py = self.y + push_y * push_dist * frac
-                if 10 < px < 4190 and 10 < py < 840:
-                    if _path_clear(self.x, self.y, px, py):
-                        return px, py
+
+        if nearest_obs is not None:
+            # 计算远离障碍物的方向
+            cx = max(nearest_obs.rect.left, min(self.x, nearest_obs.rect.right))
+            cy = max(nearest_obs.rect.top, min(self.y, nearest_obs.rect.bottom))
+            push_dx = self.x - cx
+            push_dy = self.y - cy
+            push_len = math.hypot(push_dx, push_dy)
+            if push_len > 0:
+                push_dx /= push_len
+                push_dy /= push_len
+            else:
+                push_dx = dir_x if abs(dir_x) > 0.01 else 1.0
+                push_dy = dir_y if abs(dir_y) > 0.01 else 0.0
+                push_len = math.hypot(push_dx, push_dy)
+                push_dx /= push_len
+                push_dy /= push_len
+
+            # 尝试沿推开方向的两个垂直方向滑动（沿障碍物表面）
+            for perp_sign in [1, -1]:
+                slide_x = -push_dy * perp_sign
+                slide_y = push_dx * perp_sign
+                for slide_frac in [0.8, 0.5, 0.3]:
+                    slide_dist = min(total_dist * slide_frac, ant_radius * 3)
+                    test_x = self.x + slide_x * slide_dist
+                    test_y = self.y + slide_y * slide_dist
+                    if 10 < test_x < 4190 and 10 < test_y < 840:
+                        if _path_clear(self.x, self.y, test_x, test_y):
+                            return test_x, test_y
+
+            # 尝试沿推开方向推开
+            for push_frac in [1.0, 0.5, 0.3]:
+                push_dist = ant_radius * 2 * push_frac
+                test_x = self.x + push_dx * push_dist
+                test_y = self.y + push_dy * push_dist
+                if 10 < test_x < 4190 and 10 < test_y < 840:
+                    if _path_clear(self.x, self.y, test_x, test_y):
+                        return test_x, test_y
+
+        # 阶段3：沿原方向前进一小段
+        for frac in [0.3, 0.2, 0.1]:
+            test_x = self.x + dir_x * step * frac * 4
+            test_y = self.y + dir_y * step * frac * 4
+            if 10 < test_x < 4190 and 10 < test_y < 840:
+                if _path_clear(self.x, self.y, test_x, test_y):
+                    return test_x, test_y
 
         return self.x, self.y
 
