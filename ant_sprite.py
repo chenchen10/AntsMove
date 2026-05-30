@@ -278,59 +278,43 @@ class Ant(pygame.sprite.Sprite):
         return False
 
     def _avoid_obstacles(self, new_x, new_y, dir_x, dir_y, move_dist):
-        """碰撞绕行：沿路径逐段检测，若碰撞则尝试偏移绕行"""
+        """碰撞绕行：沿路径逐段检测，碰撞时尝试绕行或沿障碍物表面滑动"""
         ant_radius = self.size // 2
         step = max(ant_radius, 4)  # 采样步长
-
-        # 沿路径逐段检测碰撞
-        collision = False
         total_dist = math.sqrt((new_x - self.x) ** 2 + (new_y - self.y) ** 2)
-        if total_dist > 0:
-            num_steps = max(1, int(total_dist / step))
-            for i in range(1, num_steps + 1):
-                t = i / num_steps
-                cx = self.x + (new_x - self.x) * t
-                cy = self.y + (new_y - self.y) * t
+
+        def _path_clear(sx, sy, ex, ey):
+            """检查从(sx,sy)到(ex,ey)的路径是否无障碍"""
+            d = math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2)
+            if d < 1:
+                return True
+            n = max(1, int(d / step))
+            for i in range(1, n + 1):
+                t = i / n
+                cx = sx + (ex - sx) * t
+                cy = sy + (ey - sy) * t
                 for obs in self.obstacles:
                     if obs.check_collision(cx, cy, ant_radius):
-                        collision = True
-                        break
-                if collision:
-                    break
+                        return False
+            return True
 
-        if not collision:
+        # 检查原路径是否碰撞
+        if _path_clear(self.x, self.y, new_x, new_y):
             return new_x, new_y
 
-        # 尝试8个方向绕行（原方向两侧各4个角度）
+        # 阶段1：尝试8个方向绕行（原方向两侧各4个角度）
         best_x, best_y = new_x, new_y
         best_dist = float('inf')
-        target_dist = total_dist
 
         for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2]:
             cos_a = math.cos(angle_offset)
             sin_a = math.sin(angle_offset)
             test_dir_x = dir_x * cos_a - dir_y * sin_a
             test_dir_y = dir_x * sin_a + dir_y * cos_a
-            test_x = self.x + test_dir_x * target_dist
-            test_y = self.y + test_dir_y * target_dist
+            test_x = self.x + test_dir_x * total_dist
+            test_y = self.y + test_dir_y * total_dist
 
-            # 逐段检查备选路径是否碰撞
-            blocked = False
-            test_dist = math.sqrt((test_x - self.x) ** 2 + (test_y - self.y) ** 2)
-            if test_dist > 0:
-                num_steps = max(1, int(test_dist / step))
-                for i in range(1, num_steps + 1):
-                    t = i / num_steps
-                    cx = self.x + (test_x - self.x) * t
-                    cy = self.y + (test_y - self.y) * t
-                    for obs in self.obstacles:
-                        if obs.check_collision(cx, cy, ant_radius):
-                            blocked = True
-                            break
-                    if blocked:
-                        break
-
-            if not blocked:
+            if _path_clear(self.x, self.y, test_x, test_y):
                 d = abs(angle_offset)
                 if d < best_dist:
                     best_dist = d
@@ -339,7 +323,47 @@ class Ant(pygame.sprite.Sprite):
         if best_dist < float('inf'):
             return best_x, best_y
 
-        # 所有方向都 blocked，停在原地
+        # 阶段2：所有完整方向都 blocked → 沿障碍物表面滑动
+        slide_dist = min(total_dist, ant_radius * 2)
+        perp_x = -dir_y
+        perp_y = dir_x
+
+        for sign in [1, -1]:
+            for frac in [0.8, 0.5]:
+                sx = self.x + perp_x * sign * slide_dist * frac
+                sy = self.y + perp_y * sign * slide_dist * frac
+                if 10 < sx < 4190 and 10 < sy < 840:
+                    if _path_clear(self.x, self.y, sx, sy):
+                        return sx, sy
+
+        # 阶段3：沿原方向前进一小段（半步）
+        half_x = self.x + dir_x * step * 2
+        half_y = self.y + dir_y * step * 2
+        if 10 < half_x < 4190 and 10 < half_y < 840:
+            if _path_clear(self.x, self.y, half_x, half_y):
+                return half_x, half_y
+
+        # 阶段4：被完全卡住 → 沿最近障碍物推开
+        nearest_obs = None
+        nearest_dist = float('inf')
+        for obs in self.obstacles:
+            dx = self.x - obs.x
+            dy = self.y - obs.y
+            d = math.sqrt(dx * dx + dy * dy)
+            if d < nearest_dist:
+                nearest_dist = d
+                nearest_obs = obs
+        if nearest_obs and nearest_dist > 0:
+            push_x = (self.x - nearest_obs.x) / nearest_dist
+            push_y = (self.y - nearest_obs.y) / nearest_dist
+            push_dist = ant_radius * 2
+            for frac in [1.0, 0.5, 0.25]:
+                px = self.x + push_x * push_dist * frac
+                py = self.y + push_y * push_dist * frac
+                if 10 < px < 4190 and 10 < py < 840:
+                    if _path_clear(self.x, self.y, px, py):
+                        return px, py
+
         return self.x, self.y
 
     def _update_animation(self, dt, moving=True):

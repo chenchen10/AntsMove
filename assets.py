@@ -208,37 +208,60 @@ def _generate_fallback(key):
 
 
 def _remove_background(surf):
-    """去除白色/浅色背景，使其透明。采样边缘像素确定背景色，双策略去除。"""
+    """去除白色/浅色背景，使用 flood-fill 从四角向内填充去除连通的背景像素。
+
+    策略：从四个角落开始 flood-fill，将与背景色相近的连通像素全部标为透明。
+    比逐像素匹配更可靠，能正确处理 anti-aliasing 产生的半透明边缘像素。
+    """
     w, h = surf.get_size()
-    # 采样四边中点 + 四角，更准确地确定背景色
-    edge_samples = [
+    if w == 0 or h == 0:
+        return surf
+
+    # 采样四角确定背景色
+    corners = [
         surf.get_at((0, 0)),
         surf.get_at((w - 1, 0)),
         surf.get_at((0, h - 1)),
         surf.get_at((w - 1, h - 1)),
-        surf.get_at((w // 2, 0)),
-        surf.get_at((w // 2, h - 1)),
-        surf.get_at((0, h // 2)),
-        surf.get_at((w - 1, h // 2)),
     ]
-    bg_r = sum(p[0] for p in edge_samples) // len(edge_samples)
-    bg_g = sum(p[1] for p in edge_samples) // len(edge_samples)
-    bg_b = sum(p[2] for p in edge_samples) // len(edge_samples)
+    bg_r = sum(p[0] for p in corners) // len(corners)
+    bg_g = sum(p[1] for p in corners) // len(corners)
+    bg_b = sum(p[2] for p in corners) // len(corners)
 
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = surf.get_at((x, y))
-            if a == 0:
-                continue
-            # 策略1：接近背景色（白色）的像素 → 透明
-            if abs(r - bg_r) < 30 and abs(g - bg_g) < 30 and abs(b - bg_b) < 30:
-                surf.set_at((x, y), (0, 0, 0, 0))
-                continue
-            # 策略2：高亮度 + 低饱和度 = 近白色像素 → 透明
-            max_c = max(r, g, b)
-            min_c = min(r, g, b)
-            if max_c > 230 and (max_c - min_c) < 30:
-                surf.set_at((x, y), (0, 0, 0, 0))
+    def _is_bg(r, g, b, a):
+        """判断像素是否为背景色（容差 40，覆盖 anti-aliasing 混合像素）"""
+        if a == 0:
+            return True
+        if abs(r - bg_r) < 40 and abs(g - bg_g) < 40 and abs(b - bg_b) < 40:
+            return True
+        # 高亮度 + 低饱和度 = 近白色像素
+        max_c = max(r, g, b)
+        min_c = min(r, g, b)
+        if max_c > 225 and (max_c - min_c) < 40:
+            return True
+        return False
+
+    # 从四个角落 flood-fill
+    visited = set()
+    queue = []
+    for sx, sy in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1),
+                   (w // 2, 0), (w // 2, h - 1), (0, h // 2), (w - 1, h // 2)]:
+        r, g, b, a = surf.get_at((sx, sy))
+        if _is_bg(r, g, b, a) and (sx, sy) not in visited:
+            queue.append((sx, sy))
+            visited.add((sx, sy))
+
+    while queue:
+        x, y = queue.pop()
+        surf.set_at((x, y), (0, 0, 0, 0))
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in visited:
+                r, g, b, a = surf.get_at((nx, ny))
+                if _is_bg(r, g, b, a):
+                    visited.add((nx, ny))
+                    queue.append((nx, ny))
+
     return surf
 
 
