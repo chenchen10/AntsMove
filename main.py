@@ -40,6 +40,7 @@ from ui_checkin import CheckinUI
 import font_helper
 
 from scenes import SCENE_MAP
+from ui_minimap import MINIMAP_X, MINIMAP_Y, MINIMAP_W, MINIMAP_H
 from camera import Camera
 from sweet_zone_manager import SweetZoneManager
 from ai_strategy import choose_target_sweet, determine_army_strategy
@@ -324,7 +325,8 @@ class GameState:
                             btn_menu = pygame.Rect(SCREEN_WIDTH - 44, 8, 36, 36)
                             nest_r = GRINDER_SIZE // 2 + 15
                             nest_dist = math.sqrt((mx - self.player_grinder.x + self.camera.x) ** 2 + (my - self.player_grinder.y + self.camera.y) ** 2) if self.player_grinder else 999
-                            if not btn_menu.collidepoint(mx, my) and nest_dist > nest_r:
+                            on_minimap = MINIMAP_X <= mx <= MINIMAP_X + MINIMAP_W and MINIMAP_Y <= my <= MINIMAP_Y + MINIMAP_H
+                            if not btn_menu.collidepoint(mx, my) and nest_dist > nest_r and not on_minimap:
                                 self._dragging = True
                                 self._drag_start_x = mx
                                 self._drag_start_y = my
@@ -898,6 +900,10 @@ class GameState:
         scene = self._get_scene(self.state)
         if hasattr(scene, 'update'):
             scene.update(dt)
+
+        # 摄像机平滑跳转（小地图点击定位）
+        if self.state == 'playing':
+            self.camera.update_jump(dt)
 
         if self.state != 'playing':
             return
