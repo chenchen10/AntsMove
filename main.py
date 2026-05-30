@@ -31,6 +31,7 @@ from save_manager import SaveManager
 from ant_sprite import Ant
 from sweet_sprite import Sweet
 from grinder_sprite import Grinder
+from obstacle import generate_obstacles
 from ui_shop import ShopUI
 from ui_task import TaskUI
 from ui_achievement import AchievementUI
@@ -165,8 +166,8 @@ class GameState:
         try:
             bg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images', 'background', 'background_three.png')
             img = pygame.image.load(bg_path).convert()
-            # 缩放到整个世界宽度（3600×700），一张图覆盖三区域
-            self.zone_bg_full = pygame.transform.smoothscale(img, (WORLD_WIDTH, SCREEN_HEIGHT))
+            # 缩放到整个世界尺寸（4200×850），一张图覆盖三区域
+            self.zone_bg_full = pygame.transform.smoothscale(img, (WORLD_WIDTH, WORLD_HEIGHT))
         except Exception:
             self.zone_bg_full = None
 
@@ -243,6 +244,7 @@ class GameState:
 
         # 三区域甜点管理器
         self.zone_manager = None
+        self.obstacles = []
 
         # 鼠标拖拽视野状态
         self._dragging = False
@@ -781,6 +783,16 @@ class GameState:
                                        color=(80, 130, 80), label="我方")
         self.ai_grinder = Grinder(x=AI_NEST_X, y=AI_NEST_Y,
                                    color=(130, 80, 80), label="敌方")
+
+        # 生成障碍物（巢穴附近不生成）
+        nest_positions = [(PLAYER_NEST_X, PLAYER_NEST_Y), (AI_NEST_X, AI_NEST_Y)]
+        self.obstacles = generate_obstacles(self.assets, nest_positions)
+
+        # 将障碍物列表引用传递给所有蚂蚁（用于碰撞绕行）
+        for ant in self.player_ants:
+            ant.obstacles = self.obstacles
+        for ant in self.ai_ants:
+            ant.obstacles = self.obstacles
 
         # 场景缓存失效（关卡切换后需要重建）
         self._scenes.pop('paused', None)

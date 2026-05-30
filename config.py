@@ -53,19 +53,23 @@ HP_BAR_RADIUS = 2
 HP_BAR_GAP = 4
 
 # 蚂蚁
-ANT_SIZE = 40
+ANT_SIZE = 32
 STUN_DURATION = 0.5        # 秒（僵直时间）
 STUN_SPEED_MULT = 0.0      # 僵直时速度倍率
 
-# 世界地图尺寸
-WORLD_WIDTH = 3600
-WORLD_HEIGHT = 700
+# 世界地图尺寸（方案C：4200×850）
+WORLD_WIDTH = 4200
+WORLD_HEIGHT = 850
 
-# 区域配置
+# 相机边界（世界坐标最大值 = 世界尺寸 - 屏幕尺寸）
+CAMERA_MAX_X = max(0, WORLD_WIDTH - SCREEN_WIDTH)   # 3000
+CAMERA_MAX_Y = max(0, WORLD_HEIGHT - SCREEN_HEIGHT)  # 150
+
+# 区域配置（方案C：左×1.5/中×1.0/右×2.0）
 ZONE_CONFIG = {
-    'left':   {'x_range': (0, 1200),   'y_range': (0, 700), 'multiplier': 1.0, 'refresh_interval': 8, 'spawn_prob': 0.30},
-    'center': {'x_range': (1200, 2400), 'y_range': (0, 700), 'multiplier': 1.5, 'refresh_interval': 6, 'spawn_prob': 0.40},
-    'right':  {'x_range': (2400, 3600), 'y_range': (0, 700), 'multiplier': 1.0, 'refresh_interval': 8, 'spawn_prob': 0.30},
+    'left':   {'x_range': (0, 1399),    'y_range': (0, 850), 'multiplier': 1.5, 'refresh_interval': 8, 'spawn_prob': 0.30},
+    'center': {'x_range': (1400, 2799), 'y_range': (0, 850), 'multiplier': 1.0, 'refresh_interval': 5, 'spawn_prob': 0.40},
+    'right':  {'x_range': (2800, 4199), 'y_range': (0, 850), 'multiplier': 2.0, 'refresh_interval': 12, 'spawn_prob': 0.30},
 }
 
 ZONE_THEME_COLORS = {
@@ -83,6 +87,8 @@ GLOW_COLOR_PLAYER = (70, 130, 220)
 GLOW_COLOR_AI = (220, 80, 70)
 
 # 小地图
+MINIMAP_W = 250
+MINIMAP_H = 80
 MINIMAP_DOT_RADIUS_SWEET = 3
 MINIMAP_BLINK_FREQ = 1.5
 MINIMAP_BLINK_ALPHA_MIN = 100

@@ -147,11 +147,11 @@ def test_score_random_perturbation():
 def test_choose_target_returns_best():
     """choose_target_sweet 选择得分最高的甜点"""
     zm = MockZoneManager()
-    ant = MockAnt(1, 'ai', 2700, 80)  # AI出生点（右侧区域）
+    ant = MockAnt(1, 'ai', 2700, 80)  # AI出生点（center区域）
     sweets = [
-        MockSweet(100, 350),    # left zone, mult=1.0, 远
-        MockSweet(1500, 350),   # center, mult=1.5, 中等距离
-        MockSweet(3000, 350),   # right zone, mult=1.0, 近
+        MockSweet(100, 350),    # left zone, mult=1.5, 远
+        MockSweet(1500, 350),   # center, mult=1.0, 中等距离
+        MockSweet(3000, 350),   # right zone, mult=2.0, 近
     ]
 
     # 多次采样看选择分布
@@ -162,9 +162,9 @@ def test_choose_target_returns_best():
 
     # 验证总是返回某个甜点
     assert all(c is not None for c in choices)
-    # center有最高倍率(1.5)且距离适中，应被高频选中
-    center_count = sum(1 for c in choices if c.x == 1500)
-    assert center_count > 50  # center因高倍率应占多数
+    # right有最高倍率(2.0)且距离近，应被高频选中
+    right_count = sum(1 for c in choices if c.x == 3000)
+    assert right_count > 50  # right因高倍率应占多数
 
 def test_choose_target_empty_list():
     """空甜点列表返回None"""
@@ -178,13 +178,13 @@ def test_choose_target_empty_list():
 def test_speed_ant_prefers_long_range():
     """高速蚂蚁偏好远距离高倍率区域"""
     zm = MockZoneManager()
-    # 高速蚂蚁出生在右侧
-    ant = MockAnt(1, 'ai', 2700, 80, base_carry=30, base_speed=SPEED_HIGH_THRESHOLD)
-    # center zone (mult=1.5) 距离较远 vs right zone (mult=1.0) 距离近
-    # 高速蚂蚁的远距离加成应让center有可观比例
+    # 高速蚂蚁出生在right区域中部
+    ant = MockAnt(1, 'ai', 3200, 80, base_carry=30, base_speed=SPEED_HIGH_THRESHOLD)
+    # right zone (mult=2.0) 距离适中 vs left zone (mult=1.5) 距离远
+    # 两者距离相近时，高速蚂蚁的远距离加成应让left有可观比例
     sweets = [
-        MockSweet(3000, 350),   # right zone, mult=1.0, 距离~400
-        MockSweet(1500, 350),   # center zone, mult=1.5, 距离~1300
+        MockSweet(2900, 350),   # right zone, mult=2.0, 距离~400
+        MockSweet(100, 350),    # left zone, mult=1.5, 距离~3200
     ]
 
     choices = []
@@ -192,10 +192,10 @@ def test_speed_ant_prefers_long_range():
         target = choose_target_sweet(ant, sweets, zm)
         choices.append(target)
 
-    center_count = sum(1 for c in choices if c.x == 1500)
-    right_count = sum(1 for c in choices if c.x == 3000)
-    # center有高倍率(1.5)和高速远距离加成，应有可观比例
-    assert center_count > 40  # 至少20%选远距离高倍率区域
+    left_count = sum(1 for c in choices if c.x == 100)
+    right_count = sum(1 for c in choices if c.x == 2900)
+    # right倍率高且距离近，应被高频选中
+    assert right_count > 80  # right因高倍率+近距离应占多数
 
 def test_carry_ant_prefers_local():
     """高负重蚂蚁偏好就近基础区域"""
@@ -258,13 +258,13 @@ def test_strategy_default均衡():
 def test_filter_sweets_by_zone():
     """按区域筛选甜点"""
     sweets = [
-        MockSweet(100, 350),
-        MockSweet(1300, 350),
-        MockSweet(2500, 350),
-        MockSweet(500, 350),
+        MockSweet(100, 350),    # left (0~1399)
+        MockSweet(1500, 350),   # center (1400~2799)
+        MockSweet(3000, 350),   # right (2800~4199)
+        MockSweet(500, 350),    # left (0~1399)
     ]
     left_sweets = filter_sweets_by_zone(sweets, 'left')
     assert len(left_sweets) == 2  # x=100 和 x=500
 
     center_sweets = filter_sweets_by_zone(sweets, 'center')
-    assert len(center_sweets) == 1  # x=1300
+    assert len(center_sweets) == 1  # x=1500

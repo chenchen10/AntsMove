@@ -7,6 +7,20 @@ import os
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
 SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds')
+DECO_DIR = os.path.join(ASSETS_DIR, 'deco')
+
+# 障碍物装饰图片路径
+DECO_IMAGE_PATHS = {
+    'flower_low':  os.path.join(DECO_DIR, 'flower_low.png'),
+    'flower_tall': os.path.join(DECO_DIR, 'flower_tall.png'),
+    'grass':       os.path.join(DECO_DIR, 'grass.png'),
+    'grass_tall':  os.path.join(DECO_DIR, 'grass_tall.png'),
+    'mushroom':    os.path.join(DECO_DIR, 'mushroom.png'),
+    'rock':        os.path.join(DECO_DIR, 'rock.png'),
+    'rock_pile':   os.path.join(DECO_DIR, 'rock_pile.png'),
+    'mat_picnic':  os.path.join(DECO_DIR, 'mat_picnic.png'),
+    'bush':        os.path.join(DECO_DIR, 'bush.png'),
+}
 
 # 图片路径映射
 ANT_DIR = os.path.join(ASSETS_DIR, 'ant')
@@ -283,6 +297,16 @@ def load_assets():
         key = f'ant_{ant_id}'
         ant_images[ant_id] = assets.get(key, fallback_img)
     assets['ant_images'] = ant_images
+
+    # 加载障碍物装饰图片（deco_*）
+    for deco_key, deco_path in DECO_IMAGE_PATHS.items():
+        asset_key = f'deco_{deco_key}'
+        if os.path.exists(deco_path):
+            try:
+                img = pygame.image.load(deco_path).convert_alpha()
+                assets[asset_key] = img
+            except Exception:
+                pass  # 由 obstacle.py 代码生成回退
 
     # 生成小图标版本的甜点（用于蚂蚁头顶存储显示）
     sweet_types = ['candy', 'cookie', 'cake', 'donut', 'cream_cup', 'chocolate']
