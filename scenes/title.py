@@ -5,7 +5,7 @@ from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
     GRAY, BG_COLOR, TEXT_COLOR, CARD_BG, CARD_BORDER, ACCENT_GOLD, ACCENT_BLUE,
 )
-from ui_elements import draw_button, draw_card
+from ui_elements import draw_button, draw_card, draw_red_dot
 import font_helper
 
 
@@ -18,6 +18,9 @@ class TitleScene:
             ("成就", "achievement_panel_active"),
             ("签到", "checkin_panel_active"),
         ]
+        # 红点状态缓存：[任务红点, 成就红点, 签到红点]
+        self._red_dot_cache = [False, False, False]
+        self._red_dot_frame = -1
 
     def _get_func_btn_rect(self, index):
         """获取第二行功能按钮的矩形区域"""
@@ -55,6 +58,28 @@ class TitleScene:
         btn_debug = pygame.Rect(SCREEN_WIDTH - 80, SCREEN_HEIGHT - 36, 70, 28)
         if btn_debug.collidepoint(mx, my):
             ctx.state = 'debug'
+
+    def _update_red_dots(self, frame):
+        """检测三个功能按钮的红点状态，带帧级缓存避免每帧重复计算"""
+        if self._red_dot_frame == frame:
+            return
+        self._red_dot_frame = frame
+        ctx = self.ctx
+        sm = ctx.sm
+
+        # 任务红点：每日或每周任一Tab存在可领取任务
+        tasks_data = sm.get_tasks_for_ui()
+        self._red_dot_cache[0] = any(
+            t['current'] >= t['target'] and not t['claimed']
+            for t in tasks_data['daily'] + tasks_data['weekly']
+        )
+
+        # 成就红点：任一维度存在已解锁但未领取的成就（实时检测）
+        from achievements_data import check_newly_unlocked
+        self._red_dot_cache[1] = len(check_newly_unlocked(sm)) > 0
+
+        # 签到红点：今日可签到
+        self._red_dot_cache[2] = sm.can_checkin_today()
 
     def draw(self, screen):
         ctx = self.ctx
@@ -113,6 +138,14 @@ class TitleScene:
                 txt = font_func.render(label, True, TEXT_COLOR)
                 screen.blit(txt, (btn.centerx - txt.get_width() // 2,
                                   btn.centery - txt.get_height() // 2))
+
+        # ── 功能按钮红点 ──
+        self._update_red_dots(pygame.time.get_ticks())
+        for i, has_dot in enumerate(self._red_dot_cache):
+            if has_dot:
+                btn = self._get_func_btn_rect(i)
+                # 红点位于按钮右上角，直径约18px（按钮宽度120px的15%）
+                draw_red_dot(screen, btn.right - 10, btn.top + 10, radius=9)
 
         # 调试按钮（右下角小字）
         btn_debug = pygame.Rect(SCREEN_WIDTH - 80, SCREEN_HEIGHT - 36, 70, 28)

@@ -395,16 +395,6 @@ class PlayingScene:
             cfg = ZONE_CONFIG[zone_name]
             x_min, x_max = cfg['x_range']
 
-            # 区域分隔线（细虚线效果）
-            sx1, sy1 = cam.world_to_screen(x_min, 0)
-            sx2, sy2 = cam.world_to_screen(x_min, SCREEN_HEIGHT)
-            line_color = (theme_color[0] // 2, theme_color[1] // 2, theme_color[2] // 2)
-            if -5 < sx1 < SCREEN_WIDTH + 5:
-                # 绘制半透明分隔线
-                line_surf = pygame.Surface((2, SCREEN_HEIGHT), pygame.SRCALPHA)
-                line_surf.fill((*line_color, 100))
-                screen.blit(line_surf, (int(sx1), 0))
-
             # 区域标签（半透明胶囊）
             cx = (x_min + x_max) // 2
             lbl = label_font.render(label_text, True, (255, 255, 255))

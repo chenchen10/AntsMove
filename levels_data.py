@@ -20,10 +20,10 @@ from terrain import TerrainType, TERRAIN_NAMES
 
 STAGES = [
     # (起始关, 结束关, 主要地形, 甜点基础HP, 敌方基础速度, 敌方基础storage)
-    (1,  50,  [TerrainType.PLAIN, TerrainType.FOREST, TerrainType.DESERT], 30, 170, 12),
-    (51, 100, [TerrainType.PLAIN, TerrainType.MOUNTAIN, TerrainType.TROPICAL, TerrainType.CONSTRUCTION], 60, 200, 22),
-    (101, 150, [TerrainType.TROPICAL, TerrainType.ICE, TerrainType.CONSTRUCTION, TerrainType.MOUNTAIN], 100, 230, 38),
-    (151, 200, [TerrainType.DESERT, TerrainType.ICE, TerrainType.TROPICAL, TerrainType.TREE_TOP, TerrainType.MOUNTAIN], 150, 260, 55),
+    (1,  50,  [TerrainType.PLAIN, TerrainType.FOREST, TerrainType.DESERT], 150, 170, 12),
+    (51, 100, [TerrainType.PLAIN, TerrainType.MOUNTAIN, TerrainType.TROPICAL, TerrainType.CONSTRUCTION], 300, 200, 22),
+    (101, 150, [TerrainType.TROPICAL, TerrainType.ICE, TerrainType.CONSTRUCTION, TerrainType.MOUNTAIN], 600, 230, 38),
+    (151, 200, [TerrainType.DESERT, TerrainType.ICE, TerrainType.TROPICAL, TerrainType.TREE_TOP, TerrainType.MOUNTAIN], 1000, 260, 55),
 ]
 
 # 每阶段的限时（秒）
@@ -100,19 +100,19 @@ def _calc_sweet_hp(level):
             # 每10关 +20%
             decade = (level - start) // 10
             return int(base_hp * (1.0 + decade * 0.2))
-    return 30
+    return 300
 
 
 def _calc_sweet_quantity(level):
-    """甜点数量：前期多后期少"""
+    """甜点数量"""
     if level <= 50:
-        return 25
+        return 125
     elif level <= 100:
-        return 20
+        return 125
     elif level <= 150:
-        return 15
+        return 150
     else:
-        return 10
+        return 200
 
 
 def _calc_sweet_coin_per(level):

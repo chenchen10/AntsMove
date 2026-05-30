@@ -40,11 +40,53 @@ GRINDER_Y = SCREEN_HEIGHT - 50
 
 # 甜点
 SWEET_SIZE_BASE = 50
+SWEET_SPAWN_BLINK_DURATION = 1.0       # 甜点出现闪烁持续时间（秒）
+SWEET_SPAWN_BLINK_LOOPS = 3            # 闪烁循环次数
+SWEET_SPAWN_BLINK_MAX_ON_SCREEN = 5    # 同时闪烁的最大甜点数
+
+# 血条
+HP_BAR_W = 40
+HP_BAR_H = 5
+HP_BAR_BG = (50, 50, 50)
+HP_BAR_FILL = (80, 200, 80)
+HP_BAR_RADIUS = 2
+HP_BAR_GAP = 4
 
 # 蚂蚁
 ANT_SIZE = 40
 STUN_DURATION = 0.5        # 秒（僵直时间）
 STUN_SPEED_MULT = 0.0      # 僵直时速度倍率
+
+# 世界地图尺寸
+WORLD_WIDTH = 3600
+WORLD_HEIGHT = 700
+
+# 区域配置
+ZONE_CONFIG = {
+    'left':   {'x_range': (0, 1200),   'y_range': (0, 700), 'multiplier': 1.0, 'refresh_interval': 8, 'spawn_prob': 0.30},
+    'center': {'x_range': (1200, 2400), 'y_range': (0, 700), 'multiplier': 1.5, 'refresh_interval': 6, 'spawn_prob': 0.40},
+    'right':  {'x_range': (2400, 3600), 'y_range': (0, 700), 'multiplier': 1.0, 'refresh_interval': 8, 'spawn_prob': 0.30},
+}
+
+ZONE_THEME_COLORS = {
+    'left':   (255, 200, 220),
+    'center': (180, 230, 160),
+    'right':  (255, 220, 120),
+}
+
+# 发光效果
+GLOW_SIZE = 120
+GLOW_ALPHA_BASE = 40
+GLOW_ALPHA_RANGE = 30
+GLOW_FREQ = 0.5
+GLOW_COLOR_PLAYER = (70, 130, 220)
+GLOW_COLOR_AI = (220, 80, 70)
+
+# 小地图
+MINIMAP_DOT_RADIUS_SWEET = 3
+MINIMAP_BLINK_FREQ = 1.5
+MINIMAP_BLINK_ALPHA_MIN = 100
+MINIMAP_BLINK_ALPHA_MAX = 255
 
 # 相机滚动速度
 SCROLL_SPEED = 10

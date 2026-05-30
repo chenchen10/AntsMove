@@ -10,6 +10,7 @@ from ants_data import (
     ANTS, ANT_BY_ID, get_upgrade_cost, get_carry_capacity, get_speed, get_defense,
     MAX_ATTR_LEVEL,
 )
+from items_data import ITEMS, ITEM_BY_NAME
 from ui_elements import draw_card, draw_button, draw_progress_bar, draw_text_centered
 import font_helper
 
@@ -302,38 +303,87 @@ class ShopUI:
     def _draw_items_tab(self, screen, rect, mx, my, level_coins, item_uses=None):
         font_sm = font_helper.get_font(14)
         font_md = font_helper.get_font(16)
+        font_lg = font_helper.get_font(18)
         item_uses = item_uses or {}
-
-        items = [
-            ('加速药水', 50, '全体速度翻倍10秒', 3),
-            ('双倍收益券', 80, '下一次交付金币翻倍', 3),
-            ('干扰粉尘', 100, '敌方全部僵直2秒', 2),
-        ]
 
         draw_text_centered(screen, f"关卡金币: {level_coins}", font_md, ACCENT_GOLD,
                            rect.centerx, rect.y + 5)
 
-        for i, (name, cost, desc, max_use) in enumerate(items):
-            y = rect.y + 35 + i * 70
-            item_rect = pygame.Rect(rect.x, y, rect.width, 60)
-            hover = item_rect.collidepoint(mx, my)
-            used = item_uses.get(name, 0)
-            can_buy = level_coins >= cost and used < max_use
+        card_h = 80  # 每张卡片高度（含间距）
+        for i, item in enumerate(ITEMS):
+            name = item["name"]
+            cost = item["cost"]
+            desc = item["description"]
+            tip = item["tip"]
+            max_use = item["max_uses"]
 
-            bg = (210, 230, 255) if hover else CARD_BG
+            y = rect.y + 35 + i * card_h - self.scroll_y
+            # 裁剪：不在可见区域内的跳过
+            if y + card_h < rect.y or y > rect.bottom:
+                continue
+
+            item_rect = pygame.Rect(rect.x, y, rect.width, 70)
+            used = item_uses.get(name, 0)
+            remain = max_use - used
+            no_uses = remain <= 0
+            no_coins = level_coins < cost
+            can_buy = not no_uses and not no_coins
+            hover = item_rect.collidepoint(mx, my)
+
+            # 背景色：正常/不可用
+            if no_uses:
+                bg = (220, 220, 220)
+            elif no_coins:
+                bg = (240, 235, 230)
+            elif hover:
+                bg = (210, 230, 255)
+            else:
+                bg = CARD_BG
             pygame.draw.rect(screen, bg, item_rect, border_radius=8)
             pygame.draw.rect(screen, CARD_BORDER, item_rect, 1, border_radius=8)
 
-            name_txt = font_md.render(f"{name} ({cost}G)", True, TEXT_COLOR if can_buy else GRAY)
-            screen.blit(name_txt, (item_rect.x + 12, item_rect.y + 8))
+            # 名称 + 价格
+            name_color = TEXT_COLOR if can_buy else GRAY
+            name_txt = font_md.render(f"{name}", True, name_color)
+            screen.blit(name_txt, (item_rect.x + 12, item_rect.y + 6))
 
+            cost_color = ACCENT_RED if no_coins else ACCENT_GOLD
+            cost_txt = font_md.render(f"{cost}G", True, cost_color if can_buy else GRAY)
+            screen.blit(cost_txt, (item_rect.x + 12 + name_txt.get_width() + 8, item_rect.y + 6))
+
+            # 描述
             desc_txt = font_sm.render(desc, True, (120, 120, 140))
-            screen.blit(desc_txt, (item_rect.x + 12, item_rect.y + 30))
+            screen.blit(desc_txt, (item_rect.x + 12, item_rect.y + 26))
 
-            remain = max_use - used
-            limit_color = ACCENT_RED if remain <= 0 else GRAY
-            limit_txt = font_sm.render(f"剩余{remain}/{max_use}", True, limit_color)
-            screen.blit(limit_txt, (item_rect.right - 70, item_rect.y + 8))
+            # 使用时机提示（12pt浅灰色小字）
+            font_tip = font_helper.get_font(12)
+            tip_txt = font_tip.render(tip, True, (160, 160, 160))
+            screen.blit(tip_txt, (item_rect.x + 12, item_rect.y + 44))
+
+            # 剩余次数（放大至18pt白色加粗）
+            remain_str = f"剩余{remain}/{max_use}"
+            if no_uses:
+                remain_color = ACCENT_RED
+                remain_txt = font_lg.render(remain_str, True, remain_color)
+                # 次数耗尽：显示「次数已用完」
+                hint_txt = font_sm.render("次数已用完", True, ACCENT_RED)
+                screen.blit(remain_txt, (item_rect.right - remain_txt.get_width() - 12, item_rect.y + 6))
+                screen.blit(hint_txt, (item_rect.right - hint_txt.get_width() - 12, item_rect.y + 30))
+            else:
+                remain_color = WHITE if can_buy else ACCENT_RED
+                remain_txt = font_lg.render(remain_str, True, remain_color)
+                screen.blit(remain_txt, (item_rect.right - remain_txt.get_width() - 12, item_rect.y + 6))
+                if no_coins:
+                    # 金币不足提示
+                    hint_txt = font_sm.render("金币不足", True, ACCENT_RED)
+                    screen.blit(hint_txt, (item_rect.right - hint_txt.get_width() - 12, item_rect.y + 30))
+
+        # 滚动提示（道具数 > 可视区域时）
+        total_h = len(ITEMS) * card_h
+        visible_h = rect.height - 35
+        if total_h > visible_h:
+            hint = font_sm.render("滚轮翻页", True, GRAY)
+            screen.blit(hint, (rect.centerx - hint.get_width() // 2, rect.bottom - 15))
 
     def handle_click(self, mx, my, save_manager, team, total_coins, level_coins, item_uses=None):
         pw, ph = 600, 520
@@ -437,15 +487,14 @@ class ShopUI:
 
     def _click_items(self, mx, my, level_coins, item_uses=None):
         rect = self._get_content_rect()
-        items = [
-            ('加速药水', 50, 3),
-            ('双倍收益券', 80, 3),
-            ('干扰粉尘', 100, 2),
-        ]
         item_uses = item_uses or {}
-        for i, (name, cost, max_use) in enumerate(items):
-            y = rect.y + 35 + i * 70
-            item_rect = pygame.Rect(rect.x, y, rect.width, 60)
+        card_h = 80
+        for i, item in enumerate(ITEMS):
+            name = item["name"]
+            cost = item["cost"]
+            max_use = item["max_uses"]
+            y = rect.y + 35 + i * card_h - self.scroll_y
+            item_rect = pygame.Rect(rect.x, y, rect.width, 70)
             if item_rect.collidepoint(mx, my):
                 used = item_uses.get(name, 0)
                 if used < max_use and level_coins >= cost:

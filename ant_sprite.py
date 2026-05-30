@@ -4,7 +4,7 @@ import pygame
 import math
 import random
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, ANT_SIZE,
+    SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, ANT_SIZE,
     BLUE_ANT_COLOR, RED_ANT_COLOR,
     STUN_DURATION, STUN_SPEED_MULT,
     SWEET_COLORS,
@@ -69,6 +69,7 @@ class Ant(pygame.sprite.Sprite):
         self.eat_timer = 0.0
         self.stun_timer = 0.0
         self.last_sweet_coin_per = 1
+        self.last_sweet_zone_multiplier = 1.0
 
         # 差异化参数
         self.speed_var = random.uniform(0.92, 1.08)
@@ -263,8 +264,8 @@ class Ant(pygame.sprite.Sprite):
             self.x += dir_x * move_dist + perp_x * wobble * dt
             self.y += dir_y * move_dist + perp_y * wobble * dt
 
-        self.x = max(10, min(SCREEN_WIDTH - 10, self.x))
-        self.y = max(10, min(SCREEN_HEIGHT - 10, self.y))
+        self.x = max(10, min(WORLD_WIDTH - 10, self.x))
+        self.y = max(10, min(WORLD_HEIGHT - 10, self.y))
 
         self._update_animation(dt, moving=True)
         self.rect.center = (int(self.x), int(self.y))
@@ -369,3 +370,41 @@ class Ant(pygame.sprite.Sprite):
             txt = font.render(f"C{self.carry_level}", True, (200, 220, 255))
             screen.blit(txt, (int(self.x) - txt.get_width() // 2,
                               int(self.y) + self.size // 2 + 2))
+
+    def draw_storage_bar_at(self, screen, camera):
+        """绘制搬运量条（使用摄像机偏移）"""
+        if self.storage <= 0:
+            return
+        icon_count = (self.storage + 1) // 2
+        icon_size = 12
+        spacing = 2
+        total_height = icon_count * (icon_size + spacing) - spacing
+        sx, sy = camera.world_to_screen(self.x, self.y)
+        start_x = int(sx) - icon_size // 2
+        start_y = int(sy) - self.size // 2 - 5 - total_height
+        icon_key = f'{self.ant_data["name"]}_icon'
+        icon_image = self.assets.get(icon_key)
+        for i in range(icon_count):
+            x = start_x
+            y = start_y + i * (icon_size + spacing)
+            if icon_image:
+                screen.blit(icon_image, (x, y))
+            else:
+                color = SWEET_COLORS.get('candy', (200, 200, 200))
+                pygame.draw.circle(screen, color, (x + icon_size // 2, y + icon_size // 2), icon_size // 2)
+
+    def draw_stun_indicator_at(self, screen, font, camera):
+        """绘制僵直指示器（使用摄像机偏移）"""
+        if self.state == self.STATE_STUNNED:
+            sx, sy = camera.world_to_screen(self.x, self.y)
+            txt = font.render("晕", True, (255, 0, 0))
+            screen.blit(txt, (int(sx) - txt.get_width() // 2,
+                              int(sy) - self.size // 2 - 22))
+
+    def draw_level_badge_at(self, screen, font, camera):
+        """绘制等级标签（使用摄像机偏移）"""
+        if self.team == 'player' and self.carry_level > 0:
+            sx, sy = camera.world_to_screen(self.x, self.y)
+            txt = font.render(f"C{self.carry_level}", True, (200, 220, 255))
+            screen.blit(txt, (int(sx) - txt.get_width() // 2,
+                              int(sy) + self.size // 2 + 2))

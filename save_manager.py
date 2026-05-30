@@ -28,11 +28,16 @@
 """
 
 import json
+import logging
 import os
+import shutil
+
+logger = logging.getLogger(__name__)
 
 SAVE_VERSION = 5
 SAVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'saves')
 SAVE_FILE = os.path.join(SAVE_DIR, 'save_data.json')
+BACKUP_FILE = SAVE_FILE + '.bak'
 
 
 def _default_save_data():
@@ -70,11 +75,13 @@ class SaveManager:
     def __init__(self):
         self.data = _default_save_data()
         self.loaded = False
+        self.load_failed = False
 
     def load(self):
         if not os.path.exists(SAVE_FILE):
             self.data = _default_save_data()
             self.loaded = True
+            self.load_failed = False
             return self.data
 
         try:
@@ -82,9 +89,17 @@ class SaveManager:
                 saved = json.load(f)
             self.data = self._migrate(saved)
             self.loaded = True
+            self.load_failed = False
         except Exception:
+            logger.exception('Failed to load save file, falling back to defaults. '
+                             'This will OVERWRITE the save on next save()!')
             self.data = _default_save_data()
             self.loaded = True
+            self.load_failed = True
+            # 尝试从备份恢复
+            restored = self._try_restore_backup()
+            if restored:
+                self.load_failed = False
 
         return self.data
 
@@ -94,15 +109,37 @@ class SaveManager:
         try:
             with open(tmp_path, 'w', encoding='utf-8') as f:
                 json.dump(self.data, f, ensure_ascii=False, indent=2)
+            # 原子替换前，备份当前存档
+            if os.path.exists(SAVE_FILE):
+                try:
+                    shutil.copy2(SAVE_FILE, BACKUP_FILE)
+                except OSError:
+                    pass
             # 原子替换：先写临时文件再 rename，防止写入中途崩溃导致存档损坏
             os.replace(tmp_path, SAVE_FILE)
         except Exception:
+            logger.exception('Failed to save file')
             # 清理临时文件
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except OSError:
                     pass
+
+    def _try_restore_backup(self):
+        """尝试从备份文件恢复存档"""
+        if not os.path.exists(BACKUP_FILE):
+            logger.warning('No backup file found at %s', BACKUP_FILE)
+            return False
+        try:
+            with open(BACKUP_FILE, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+            self.data = self._migrate(saved)
+            logger.info('Successfully restored save from backup')
+            return True
+        except Exception:
+            logger.exception('Failed to restore from backup')
+            return False
 
     def _migrate(self, saved):
         """版本迁移：v1 → v2 → v3 → v4 → v5"""
@@ -113,74 +150,86 @@ class SaveManager:
 
         old_version = saved.get('version', 1)
         if old_version < 2:
-            # v1: {'level': int, 'owned': bool/count} → v2: {'count': int, 'carry': int, 'speed': int, 'defense': int}
-            for ant_id_str, ant_data in data.get('ants', {}).items():
-                if 'carry' in ant_data:
-                    continue  # 已经是v2格式
-                # 获取旧数据
-                old_level = ant_data.get('level', 0)
-                old_count = ant_data.get('count', 0)
-                if 'owned' in ant_data and 'count' not in ant_data:
-                    old_count = 1 if ant_data.pop('owned') else 0
-                # 迁移：旧等级 → 搬运等级，速度/防御为0
-                data['ants'][ant_id_str] = {
-                    'count': old_count,
-                    'carry': old_level,
-                    'speed': 0,
-                    'defense': 0,
-                }
+            try:
+                # v1: {'level': int, 'owned': bool/count} → v2: {'count': int, 'carry': int, 'speed': int, 'defense': int}
+                for ant_id_str, ant_data in data.get('ants', {}).items():
+                    if 'carry' in ant_data:
+                        continue  # 已经是v2格式
+                    # 获取旧数据
+                    old_level = ant_data.get('level', 0)
+                    old_count = ant_data.get('count', 0)
+                    if 'owned' in ant_data and 'count' not in ant_data:
+                        old_count = 1 if ant_data.pop('owned') else 0
+                    # 迁移：旧等级 → 搬运等级，速度/防御为0
+                    data['ants'][ant_id_str] = {
+                        'count': old_count,
+                        'carry': old_level,
+                        'speed': 0,
+                        'defense': 0,
+                    }
+            except Exception:
+                logger.exception('Migration v1→v2 failed, skipping')
 
         if old_version < 3:
-            # v2 → v3：新增关卡星级、任务、成就、签到数据
-            data.setdefault('levels', {})
-            data.setdefault('daily_tasks', {'date': '', 'tasks': []})
-            data.setdefault('weekly_tasks', {'week': '', 'tasks': []})
-            data.setdefault('achievements', {})
-            data.setdefault('checkin', {
-                'current_day': 0,
-                'last_checkin_date': None,
-                'total_checkins': 0,
-                'streak': 0,
-                'cycles_completed': 0,
-            })
-            # 回填已通关关卡星级（保守1星）
-            from levels_data import get_level, _calc_target_coins
-            max_passed = data.get('max_level_passed', 0)
-            for lv in range(1, max_passed + 1):
-                key = str(lv)
-                if key not in data['levels']:
-                    data['levels'][key] = {
-                        'best_stars': 1,
-                        'best_coins': _calc_target_coins(lv),
-                        'best_time_left': 0,
-                        'times_played': 0,
-                        'times_won': 1,
-                    }
+            try:
+                # v2 → v3：新增关卡星级、任务、成就、签到数据
+                data.setdefault('levels', {})
+                data.setdefault('daily_tasks', {'date': '', 'tasks': []})
+                data.setdefault('weekly_tasks', {'week': '', 'tasks': []})
+                data.setdefault('achievements', {})
+                data.setdefault('checkin', {
+                    'current_day': 0,
+                    'last_checkin_date': None,
+                    'total_checkins': 0,
+                    'streak': 0,
+                    'cycles_completed': 0,
+                })
+                # 回填已通关关卡星级（保守1星）
+                from levels_data import get_level, _calc_target_coins
+                max_passed = data.get('max_level_passed', 0)
+                for lv in range(1, max_passed + 1):
+                    key = str(lv)
+                    if key not in data['levels']:
+                        data['levels'][key] = {
+                            'best_stars': 1,
+                            'best_coins': _calc_target_coins(lv),
+                            'best_time_left': 0,
+                            'times_played': 0,
+                            'times_won': 1,
+                        }
+            except Exception:
+                logger.exception('Migration v2→v3 failed, skipping')
 
         if old_version < 4:
-            # v3 → v4：任务系统正式启用，确保字段结构完整
-            dt = data.get('daily_tasks', {})
-            if not isinstance(dt, dict) or 'date' not in dt:
-                data['daily_tasks'] = {'date': '', 'tasks': []}
-            wt = data.get('weekly_tasks', {})
-            if not isinstance(wt, dict) or 'week' not in wt:
-                data['weekly_tasks'] = {'week': '', 'tasks': []}
+            try:
+                # v3 → v4：任务系统正式启用，确保字段结构完整
+                dt = data.get('daily_tasks', {})
+                if not isinstance(dt, dict) or 'date' not in dt:
+                    data['daily_tasks'] = {'date': '', 'tasks': []}
+                wt = data.get('weekly_tasks', {})
+                if not isinstance(wt, dict) or 'week' not in wt:
+                    data['weekly_tasks'] = {'week': '', 'tasks': []}
+            except Exception:
+                logger.exception('Migration v3→v4 failed, skipping')
 
         if old_version < 5:
-            # v4 → v5：成就系统正式启用，规范化achievements数据结构
-            # 旧格式: {id: {'current': int, 'claimed': bool}} 或 {}
-            # 新格式: {id: {'progress': int, 'claimed': bool}}（补全所有成就ID）
-            from achievements_data import ACHIEVEMENTS
-            old_ach = data.get('achievements', {})
-            new_ach = {}
-            for ach in ACHIEVEMENTS:
-                aid = ach['id']
-                saved_ach = old_ach.get(aid, {})
-                # 兼容旧的 'current' 字段 → 重命名为 'progress'
-                progress = saved_ach.get('progress', saved_ach.get('current', 0))
-                claimed = saved_ach.get('claimed', False)
-                new_ach[aid] = {'progress': int(progress), 'claimed': bool(claimed)}
-            data['achievements'] = new_ach
+            try:
+                # v4 → v5：成就系统正式启用，规范化achievements数据结构
+                # 旧格式: {id: {'current': int, 'claimed': bool}} 或 {}
+                # 新格式: {id: {'progress': int, 'claimed': bool}}（补全所有成就ID）
+                from achievements_data import ACHIEVEMENTS
+                old_ach = data.get('achievements', {})
+                new_ach = {}
+                for ach in ACHIEVEMENTS:
+                    aid = ach['id']
+                    saved_ach = old_ach.get(aid, {})
+                    # 兼容旧的 'current' 字段 → 重命名为 'progress'
+                    progress = saved_ach.get('progress', saved_ach.get('current', 0))
+                    claimed = saved_ach.get('claimed', False)
+                    new_ach[aid] = {'progress': int(progress), 'claimed': bool(claimed)}
+                data['achievements'] = new_ach
+            except Exception:
+                logger.exception('Migration v4→v5 failed, skipping')
 
         data['version'] = SAVE_VERSION
         return data
@@ -406,10 +455,17 @@ class SaveManager:
         return sum(r.get('times_won', 0) for r in self.data.get('levels', {}).values())
 
     def ensure_starter_ant(self):
-        """确保玩家至少拥有1只初始蚂蚁（ant_id=1），防止软锁定"""
+        """确保玩家至少拥有1只初始蚂蚁（ant_id=1），防止软锁定
+
+        注意：仅在存档确实为空（非加载失败导致的默认数据）时才写盘，
+        避免加载失败时将空白数据写回覆盖真实存档。
+        """
         if self.get_owned_count() == 0:
             self.data['ants']['1'] = {'count': 1, 'carry': 0, 'speed': 0, 'defense': 0}
-            self.save()
+            # 加载失败时禁止写盘，防止将默认数据+1只蚂蚁覆盖真实存档
+            # 仅在加载成功（或新玩家首次启动无存档文件）时才写盘
+            if not self.load_failed and os.path.exists(SAVE_FILE):
+                self.save()
 
     # ── 任务系统接口（v4新增）──
 

@@ -44,7 +44,10 @@ class DebugScene:
             'px': px, 'py': py, 'pw': pw, 'ph': ph,
             'cx': cx, 'cw': cw,
             'inp_coin': pygame.Rect(cx + 80, row1_y - 4, 150, 28),
-            'btn_set':  pygame.Rect(cx + 240, row1_y - 4, 80, 28),
+            'btn_set':  pygame.Rect(cx + 240, row1_y - 4, 60, 28),
+            'btn_add_1w':  pygame.Rect(cx + 306, row1_y - 4, 48, 28),
+            'btn_add_10w': pygame.Rect(cx + 358, row1_y - 4, 52, 28),
+            'btn_add_100w': pygame.Rect(cx + 414, row1_y - 4, 56, 28),
             'inp_level': pygame.Rect(cx + 100, row2_y - 4, 100, 28),
             'btn_unlock': pygame.Rect(cx + 210, row2_y - 4, 120, 28),
             'inp_ant':  pygame.Rect(cx + 100, row3_y - 4, 100, 28),
@@ -79,6 +82,21 @@ class DebugScene:
             else:
                 self._show_msg("请先输入数字")
             return
+
+        # 快捷加金币按钮
+        quick_btns = [
+            ('btn_add_1w', 10000, "+1W"),
+            ('btn_add_10w', 100000, "+10W"),
+            ('btn_add_100w', 1000000, "+100W"),
+        ]
+        for key, delta, label in quick_btns:
+            if L[key].collidepoint(mx, my):
+                new_amount = ctx.sm.get_total_coins() + delta
+                ctx.sm.data['total_coins'] = new_amount
+                ctx.sm.save()
+                ctx.total_coins = new_amount
+                self._show_msg(f"金币 +{label} → {new_amount}")
+                return
 
         # 关卡输入框
         if L['inp_level'].collidepoint(mx, my):
@@ -125,14 +143,14 @@ class DebugScene:
 
         # 一键满级
         if L['btn_max'].collidepoint(mx, my):
-            ctx.sm.data['total_coins'] = 999999
+            ctx.sm.data['total_coins'] = 99999999
             ctx.sm.data['max_level_passed'] = 200
             for ant in ANTS:
                 aid = str(ant['id'])
                 ctx.sm.data['ants'][aid] = {'count': 5, 'carry': MAX_ATTR_LEVEL, 'speed': MAX_ATTR_LEVEL, 'defense': MAX_ATTR_LEVEL}
             ctx.sm.save()
-            ctx.total_coins = 999999
-            self._show_msg("已一键满级：999999G / 200关 / 全蚂蚁三属性Lv200 x5")
+            ctx.total_coins = 99999999
+            self._show_msg("已一键满级：99999999G / 200关 / 全蚂蚁三属性Lv200 x5")
             return
 
         # 重置存档
@@ -166,7 +184,7 @@ class DebugScene:
             return
         if event.unicode.isdigit():
             target = {
-                'coins': (self, 'coin_input', 7),
+                'coins': (self, 'coin_input', 9),
                 'level': (self, 'level_input', 3),
                 'ant_level': (self, 'ant_level_input', 3),
             }.get(self.active_input)
@@ -228,6 +246,12 @@ class DebugScene:
                          self.active_input == 'coins', font_md)
         draw_button(screen, L['btn_set'], "设置", font_sm,
                     color=ACCENT_BLUE, hover=L['btn_set'].collidepoint(mx, my))
+        draw_button(screen, L['btn_add_1w'], "+1W", font_sm,
+                    color=(80, 160, 80), hover=L['btn_add_1w'].collidepoint(mx, my))
+        draw_button(screen, L['btn_add_10w'], "+10W", font_sm,
+                    color=(80, 160, 80), hover=L['btn_add_10w'].collidepoint(mx, my))
+        draw_button(screen, L['btn_add_100w'], "+100W", font_sm,
+                    color=(80, 160, 80), hover=L['btn_add_100w'].collidepoint(mx, my))
 
         # ── 解锁关卡 ──
         row2_y = row1_y + 50
@@ -248,7 +272,7 @@ class DebugScene:
                     color=(80, 160, 80), hover=L['btn_all'].collidepoint(mx, my))
 
         # ── 一键满级 ──
-        draw_button(screen, L['btn_max'], "一键满级 (999999G / 200关 / 全蚂蚁Lv200x5)", font_sm,
+        draw_button(screen, L['btn_max'], "一键满级 (99999999G / 200关 / 全蚂蚁Lv200x5)", font_sm,
                     color=ACCENT_GOLD, hover=L['btn_max'].collidepoint(mx, my))
 
         # ── 重置存档 ──

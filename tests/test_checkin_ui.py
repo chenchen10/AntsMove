@@ -19,37 +19,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
 # ── Mock pygame ──
-# 在 import ui_checkin 之前 mock pygame，避免无头环境报错
+# 需要在 import ui_checkin/ui_elements 之前 mock pygame，避免无头环境报错。
+# 如果其他测试文件（如 test_auto_settle.py）已经导入了真实 pygame，
+# 则需要先清除已导入的相关模块，再设置 mock，最后重新导入。
 
-mock_pygame = MagicMock()
-mock_pygame.Rect = MagicMock(side_effect=lambda x, y, w, h: MagicMock(
-    x=x, y=y, width=w, height=h,
-    right=x + w, bottom=y + h, centerx=x + w // 2, centery=y + h // 2,
-    collidepoint=MagicMock(return_value=False),
-))
-
-# Mock draw 模块
-mock_draw = MagicMock()
-mock_pygame.draw = mock_draw
-
-# Mock Surface
-mock_surface = MagicMock()
-mock_pygame.Surface = MagicMock(return_value=mock_surface)
-mock_pygame.SRCALPHA = 0x00010000
-
-# Mock font
-mock_font = MagicMock()
-mock_font_obj = MagicMock()
-mock_font_obj.render = MagicMock(return_value=MagicMock(
-    get_width=MagicMock(return_value=100),
-    get_height=MagicMock(return_value=20),
-    set_alpha=MagicMock(),
-))
-mock_font.SysFont = MagicMock(return_value=mock_font_obj)
-mock_pygame.font = mock_font
-
-# Mock Rect class for real usage
 class FakeRect:
+    """支持 collidepoint 的 FakeRect"""
     def __init__(self, x, y, w, h):
         self.x = x
         self.y = y
@@ -63,37 +38,72 @@ class FakeRect:
     def collidepoint(self, mx, my):
         return self.x <= mx <= self.right and self.y <= my <= self.bottom
 
-mock_pygame.Rect = FakeRect
+
+def _build_pygame_mock():
+    """构建 pygame mock"""
+    m = MagicMock()
+    m.Rect = FakeRect
+    draw_mock = MagicMock()
+    m.draw = draw_mock
+    m.Surface = MagicMock(return_value=MagicMock())
+    m.SRCALPHA = 0x00010000
+    font_mock = MagicMock()
+    font_obj = MagicMock()
+    font_obj.render = MagicMock(return_value=MagicMock(
+        get_width=MagicMock(return_value=100),
+        get_height=MagicMock(return_value=20),
+        set_alpha=MagicMock(),
+    ))
+    font_mock.SysFont = MagicMock(return_value=font_obj)
+    m.font = font_mock
+    return m, draw_mock, font_obj
+
+
+def _build_config_mock():
+    m = MagicMock()
+    m.SCREEN_WIDTH = 800
+    m.SCREEN_HEIGHT = 600
+    m.TEXT_COLOR = (200, 200, 200)
+    m.WHITE = (255, 255, 255)
+    m.GRAY = (128, 128, 128)
+    m.BLACK = (0, 0, 0)
+    m.ACCENT_BLUE = (100, 150, 255)
+    m.ACCENT_GOLD = (255, 200, 50)
+    m.ACCENT_RED = (255, 80, 80)
+    m.CARD_BG = (40, 40, 60)
+    m.CARD_BORDER = (80, 80, 100)
+    m.BTN_HOVER = (100, 100, 120)
+    return m
+
+
+# ── 清除可能已被其他测试以真实模块导入的相关模块 ──
+# 这确保后续 mock 设置能生效，不受其他测试导入顺序影响
+_MODULES_TO_CLEAN = [
+    'ui_checkin', 'ui_elements', 'font_helper', 'config',
+    'checkin_data', 'pygame.draw', 'pygame.font',
+]
+for _mod_name in _MODULES_TO_CLEAN:
+    if _mod_name in sys.modules and not isinstance(sys.modules[_mod_name], MagicMock):
+        del sys.modules[_mod_name]
+
+# ── 设置 mock ──
+mock_pygame, mock_draw, mock_font_obj = _build_pygame_mock()
 
 sys.modules['pygame'] = mock_pygame
 sys.modules['pygame.draw'] = mock_draw
-sys.modules['pygame.font'] = mock_font
+sys.modules['pygame.font'] = mock_pygame.font
 
-# Mock config
-mock_config = MagicMock()
-mock_config.SCREEN_WIDTH = 800
-mock_config.SCREEN_HEIGHT = 600
-mock_config.TEXT_COLOR = (200, 200, 200)
-mock_config.WHITE = (255, 255, 255)
-mock_config.GRAY = (128, 128, 128)
-mock_config.BLACK = (0, 0, 0)
-mock_config.ACCENT_BLUE = (100, 150, 255)
-mock_config.ACCENT_GOLD = (255, 200, 50)
-mock_config.CARD_BG = (40, 40, 60)
-mock_config.CARD_BORDER = (80, 80, 100)
-mock_config.BTN_HOVER = (100, 100, 120)
+mock_config = _build_config_mock()
 sys.modules['config'] = mock_config
 
-# Mock ui_elements
 mock_ui_elements = MagicMock()
 sys.modules['ui_elements'] = mock_ui_elements
 
-# Mock font_helper
 mock_font_helper = MagicMock()
 mock_font_helper.get_font = MagicMock(return_value=mock_font_obj)
 sys.modules['font_helper'] = mock_font_helper
 
-# 现在可以安全 import
+# ── 导入被测模块 ──
 from ui_checkin import CheckinUI
 from checkin_data import CHECKIN_BASE_REWARDS
 

@@ -57,3 +57,15 @@ def draw_text_centered(surface, text, font, color, center_x, y):
     txt = font.render(text, True, color)
     surface.blit(txt, (center_x - txt.get_width() // 2, y))
     return txt.get_height()
+
+
+def draw_red_dot(surface, x, y, radius=9, color=(220, 80, 70)):
+    """绘制红点（实心圆）
+
+    Args:
+        surface: 绘制目标
+        x, y: 圆心坐标
+        radius: 半径，默认9（直径约18px，按钮宽度120px的15%）
+        color: 颜色，默认暖红 (220, 80, 70)，与项目暖色调一致
+    """
+    pygame.draw.circle(surface, color, (int(x), int(y)), radius)

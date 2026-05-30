@@ -148,16 +148,23 @@ class TestBUG2EnsureStarterAnt:
         assert 'defense' in ant
 
     def test_ensure_starter_ant_saves(self, tmp_save_dir):
-        """ensure_starter_ant 应持久化保存"""
+        """ensure_starter_ant 应在有存档文件时持久化保存"""
         sm = SaveManager()
-        sm.loaded = True
+        # 先创建一个存档文件（有真实数据）
+        sm.data['total_coins'] = 100
+        sm.save()
+        # 模拟清空蚂蚁
         sm.data['ants'] = {}
+        sm.loaded = True
+        sm.load_failed = False
         sm.ensure_starter_ant()
         # 重新加载验证
         sm2 = SaveManager()
         sm2.load()
         assert '1' in sm2.data['ants']
         assert sm2.data['ants']['1']['count'] == 1
+        # 原有数据应保留
+        assert sm2.data['total_coins'] == 100
 
     def test_reset_then_ensure_starter(self, tmp_save_dir):
         """重置存档后调用 ensure_starter_ant 应给予初始蚂蚁"""

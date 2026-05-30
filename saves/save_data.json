@@ -1,15 +1,8 @@
 {
   "version": 5,
-  "total_coins": 996271,
+  "total_coins": 50,
   "max_level_passed": 0,
-  "ants": {
-    "1": {
-      "count": 1,
-      "carry": 21,
-      "speed": 0,
-      "defense": 0
-    }
-  },
+  "ants": {},
   "settings": {
     "music_on": true,
     "sfx_on": true
@@ -26,19 +19,18 @@
   "achievements": {
     "C1": {
       "progress": 1,
-      "claimed": true,
-      "unlocked_notified": true
+      "claimed": true
     },
     "C2": {
-      "progress": 1,
+      "progress": 0,
       "claimed": false
     },
     "C3": {
-      "progress": 1,
+      "progress": 0,
       "claimed": false
     },
     "C4": {
-      "progress": 1,
+      "progress": 0,
       "claimed": false
     },
     "H1": {
@@ -86,21 +78,19 @@
       "claimed": false
     },
     "E4": {
-      "progress": 999900,
-      "claimed": false,
-      "unlocked_notified": true
+      "progress": 0,
+      "claimed": false
     },
     "G1": {
-      "progress": 21,
-      "claimed": false,
-      "unlocked_notified": true
+      "progress": 0,
+      "claimed": false
     },
     "G2": {
       "progress": 0,
       "claimed": false
     },
     "G3": {
-      "progress": 21,
+      "progress": 0,
       "claimed": false
     },
     "G4": {

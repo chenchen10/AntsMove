@@ -1,16 +1,16 @@
 """研磨机精灵"""
 
 import pygame
-from config import GRINDER_SIZE, GRINDER_X, GRINDER_Y, GRINDER_COLOR
+from config import GRINDER_SIZE, GRINDER_COLOR
 
 
 class Grinder(pygame.sprite.Sprite):
     """研磨机：蚂蚁在此交付甜食换取金币"""
 
-    def __init__(self, x=None, y=None, color=None, label=""):
+    def __init__(self, x, y, color=None, label=""):
         super().__init__()
-        self.x = x if x is not None else GRINDER_X
-        self.y = y if y is not None else GRINDER_Y
+        self.x = x
+        self.y = y
         self.label = label
         self.size = GRINDER_SIZE
         self.grinder_color = color or GRINDER_COLOR
