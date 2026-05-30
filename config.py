@@ -5,6 +5,22 @@ SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 700
 FPS = 60
 
+# 地图设置（V1.4：3倍视口宽度）
+WORLD_WIDTH = 3600
+WORLD_HEIGHT = 700
+CAMERA_MAX_X = WORLD_WIDTH - SCREEN_WIDTH   # 2400
+CAMERA_MAX_Y = WORLD_HEIGHT - SCREEN_HEIGHT  # 0 (垂直方向不超出)
+
+# 相机参数
+BOUNCE_OFFSET = 20
+FRICTION = 0.92
+MAX_SPEED = 50
+STOP_THRESHOLD = 0.5
+
+# 小地图
+MINIMAP_W = 250
+MINIMAP_H = 80
+
 # 颜色
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -45,3 +61,34 @@ SWEET_SIZE_BASE = 50
 ANT_SIZE = 40
 STUN_DURATION = 0.5        # 秒（僵直时间）
 STUN_SPEED_MULT = 0.0      # 僵直时速度倍率
+
+# 相机滚动速度
+SCROLL_SPEED = 10
+
+# ── 区域系统（V1.4） ──
+ZONE_CONFIG = {
+    'left': {
+        'x_range': (0, WORLD_WIDTH // 3 - 1),
+        'y_range': (0, WORLD_HEIGHT),
+        'multiplier': 1.0,
+        'label': '基础区',
+    },
+    'center': {
+        'x_range': (WORLD_WIDTH // 3, 2 * WORLD_WIDTH // 3 - 1),
+        'y_range': (0, WORLD_HEIGHT),
+        'multiplier': 1.5,
+        'label': '稀有区',
+    },
+    'right': {
+        'x_range': (2 * WORLD_WIDTH // 3, WORLD_WIDTH - 1),
+        'y_range': (0, WORLD_HEIGHT),
+        'multiplier': 1.0,
+        'label': '基础区',
+    },
+}
+
+ZONE_THEME_COLORS = {
+    'left':   (255, 200, 220),
+    'center': (180, 230, 160),
+    'right':  (255, 220, 120),
+}

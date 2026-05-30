@@ -902,6 +902,9 @@ class GameState:
         if self.state != 'playing':
             return
 
+        # 小地图跳转动画（平滑过渡，不中断游戏逻辑）
+        self.camera.update_jump(dt)
+
         # Timer
         self.level_timer -= dt
         self._elapsed_time += dt
