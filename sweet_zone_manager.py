@@ -63,6 +63,10 @@ class SweetZoneManager:
 
         return new_sweets
 
+    def get_zone_for_sweet(self, sweet):
+        """获取指定甜点所在区域的key"""
+        return get_zone_for_x(sweet.x)
+
     def get_multiplier_for_sweet(self, sweet):
         """获取指定甜点所在区域的倍率"""
         zone = get_zone_for_x(sweet.x)
