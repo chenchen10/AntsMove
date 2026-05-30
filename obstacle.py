@@ -19,17 +19,15 @@ OBSTACLE_TYPES = {
     # 中区碰撞障碍
     'rock':          {'w': 50, 'h': 45, 'collidable': True,  'color': (130, 130, 140)},
     'rock_pile':     {'w': 60, 'h': 55, 'collidable': True,  'color': (110, 110, 120)},
-    'grass_tall':    {'w': 45, 'h': 50, 'collidable': True,  'color': (80, 160, 60)},
     # 右区碰撞障碍
     'flower_tall':   {'w': 60, 'h': 65, 'collidable': True,  'color': (180, 100, 140)},
-    'bush':          {'w': 55, 'h': 50, 'collidable': True,  'color': (70, 140, 50)},
 }
 
 # 各区域可使用的障碍物类型
 ZONE_OBSTACLE_TYPES = {
     'left':   ['flower_low', 'mushroom', 'grass', 'mat_picnic'],
-    'center': ['rock', 'rock_pile', 'grass_tall'],
-    'right':  ['flower_tall', 'rock_pile', 'bush'],
+    'center': ['rock', 'rock_pile'],
+    'right':  ['flower_tall', 'rock_pile'],
 }
 
 # 各区域障碍物数量范围
@@ -117,12 +115,6 @@ class Obstacle:
                 pygame.draw.line(surf, line_color, (lx, 6), (lx, self.height - 6), 1)
                 ly = 4 + (self.height - 8) * i // 3
                 pygame.draw.line(surf, line_color, (6, ly), (self.width - 6, ly), 1)
-        elif 'bush' in self.obs_type:
-            # 灌木丛：多个重叠圆
-            for dx, dy, r in [(-8, -4, 14), (8, -2, 12), (0, 4, 16), (-4, -8, 10)]:
-                pygame.draw.circle(surf, self.color, (cx + dx, cy + dy), r)
-            highlight = tuple(min(255, c + 20) for c in self.color)
-            pygame.draw.circle(surf, highlight, (cx - 4, cy - 8), 6)
         else:
             # 通用：圆形
             pygame.draw.circle(surf, self.color, (cx, cy), min(cx, cy) - 2)

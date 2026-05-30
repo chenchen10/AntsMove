@@ -14,12 +14,10 @@ DECO_IMAGE_PATHS = {
     'flower_low':  os.path.join(DECO_DIR, 'flower_low.png'),
     'flower_tall': os.path.join(DECO_DIR, 'flower_tall.png'),
     'grass':       os.path.join(DECO_DIR, 'grass.png'),
-    'grass_tall':  os.path.join(DECO_DIR, 'grass_tall.png'),
     'mushroom':    os.path.join(DECO_DIR, 'mushroom.png'),
     'rock':        os.path.join(DECO_DIR, 'rock.png'),
     'rock_pile':   os.path.join(DECO_DIR, 'rock_pile.png'),
     'mat_picnic':  os.path.join(DECO_DIR, 'mat_picnic.png'),
-    'bush':        os.path.join(DECO_DIR, 'bush.png'),
 }
 
 # 图片路径映射
@@ -42,21 +40,21 @@ IMAGE_PATHS = {
     'candy_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
     'candy_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
     'candy_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
-    'cookie_full': os.path.join(ASSETS_DIR, 'cookie', 'cookie_full.png'),
-    'cookie_60': os.path.join(ASSETS_DIR, 'cookie', 'cookie_60.png'),
-    'cookie_30': os.path.join(ASSETS_DIR, 'cookie', 'cookie_30.png'),
-    'cake_full': os.path.join(ASSETS_DIR, 'cake', 'cake_full.png'),
-    'cake_60': os.path.join(ASSETS_DIR, 'cake', 'cake_60.png'),
-    'cake_30': os.path.join(ASSETS_DIR, 'cake', 'cake_30.png'),
-    'donut_full': os.path.join(ASSETS_DIR, 'donut', 'donut_full.png'),
-    'donut_60': os.path.join(ASSETS_DIR, 'donut', 'donut_60.png'),
-    'donut_30': os.path.join(ASSETS_DIR, 'donut', 'donut_30.png'),
-    'cream_cup_full': os.path.join(ASSETS_DIR, 'cream_cup', 'cream_cup_full.png'),
-    'cream_cup_60': os.path.join(ASSETS_DIR, 'cream_cup', 'cream_cup_60.png'),
-    'cream_cup_30': os.path.join(ASSETS_DIR, 'cream_cup', 'cream_cup_30.png'),
-    'chocolate_full': os.path.join(ASSETS_DIR, 'chocolate', 'chocolate_full.png'),
-    'chocolate_60': os.path.join(ASSETS_DIR, 'chocolate', 'chocolate_60.png'),
-    'chocolate_30': os.path.join(ASSETS_DIR, 'chocolate', 'chocolate_30.png'),
+    'cookie_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'cookie_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'cookie_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'cake_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'cake_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'cake_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'donut_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'donut_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'donut_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'cream_cup_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'cream_cup_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'cream_cup_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
+    'chocolate_full': os.path.join(ASSETS_DIR, 'candy', 'candy_full.png'),
+    'chocolate_60': os.path.join(ASSETS_DIR, 'candy', 'candy_60.png'),
+    'chocolate_30': os.path.join(ASSETS_DIR, 'candy', 'candy_30.png'),
     # 新手引导素材
     'guide_overlay': os.path.join(ASSETS_DIR, 'guide', 'guide_overlay.png'),
     'guide_circle': os.path.join(ASSETS_DIR, 'guide', 'guide_circle.png'),
@@ -299,11 +297,17 @@ def load_assets():
     assets['ant_images'] = ant_images
 
     # 加载障碍物装饰图片（deco_*）
+    # 预导入 OBSTACLE_TYPES 以获取目标尺寸
+    from obstacle import OBSTACLE_TYPES
     for deco_key, deco_path in DECO_IMAGE_PATHS.items():
         asset_key = f'deco_{deco_key}'
         if os.path.exists(deco_path):
             try:
                 img = pygame.image.load(deco_path).convert_alpha()
+                # 根据 obstacle.py 中定义的尺寸缩放图片
+                if deco_key in OBSTACLE_TYPES:
+                    t = OBSTACLE_TYPES[deco_key]
+                    img = pygame.transform.smoothscale(img, (t['w'], t['h']))
                 assets[asset_key] = img
             except Exception:
                 pass  # 由 obstacle.py 代码生成回退
