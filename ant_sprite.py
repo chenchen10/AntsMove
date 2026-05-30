@@ -81,6 +81,9 @@ class Ant(pygame.sprite.Sprite):
         self._ai_terrain_debuff_reduction = 0.0
         self._ai_stun_reduction = 0.0
 
+        # 障碍物列表引用（由main.py设置，用于碰撞绕行）
+        self.obstacles = []
+
         # 战斗冷却（per-enemy，PRD v2.0 BUG-03）
         self._last_knockback_time = {}  # {enemy_ant_id: timestamp}
         self._last_stun_time = {}       # {enemy_ant_id: timestamp}
@@ -258,18 +261,67 @@ class Ant(pygame.sprite.Sprite):
 
         move_dist = effective_speed * dt
         if move_dist >= dist:
-            self.x = tx
-            self.y = ty
+            new_x, new_y = tx, ty
         else:
-            self.x += dir_x * move_dist + perp_x * wobble * dt
-            self.y += dir_y * move_dist + perp_y * wobble * dt
+            new_x = self.x + dir_x * move_dist + perp_x * wobble * dt
+            new_y = self.y + dir_y * move_dist + perp_y * wobble * dt
 
-        self.x = max(10, min(WORLD_WIDTH - 10, self.x))
-        self.y = max(10, min(WORLD_HEIGHT - 10, self.y))
+        # 障碍物碰撞绕行
+        if self.obstacles:
+            new_x, new_y = self._avoid_obstacles(new_x, new_y, dir_x, dir_y, move_dist)
+
+        self.x = max(10, min(WORLD_WIDTH - 10, new_x))
+        self.y = max(10, min(WORLD_HEIGHT - 10, new_y))
 
         self._update_animation(dt, moving=True)
         self.rect.center = (int(self.x), int(self.y))
         return False
+
+    def _avoid_obstacles(self, new_x, new_y, dir_x, dir_y, move_dist):
+        """碰撞绕行：检测新位置是否与障碍物碰撞，若碰撞则尝试偏移绕行"""
+        ant_radius = self.size // 2
+        # 检查新位置是否碰撞
+        collision = False
+        for obs in self.obstacles:
+            if obs.check_collision(new_x, new_y, ant_radius):
+                collision = True
+                break
+
+        if not collision:
+            return new_x, new_y
+
+        # 尝试8个方向绕行（原方向两侧各3个角度）
+        best_x, best_y = new_x, new_y
+        best_dist = float('inf')
+        target_dist = math.sqrt((new_x - self.x) ** 2 + (new_y - self.y) ** 2)
+
+        for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2]:
+            cos_a = math.cos(angle_offset)
+            sin_a = math.sin(angle_offset)
+            test_dir_x = dir_x * cos_a - dir_y * sin_a
+            test_dir_y = dir_x * sin_a + dir_y * cos_a
+            test_x = self.x + test_dir_x * target_dist
+            test_y = self.y + test_dir_y * target_dist
+
+            # 检查是否碰撞
+            blocked = False
+            for obs in self.obstacles:
+                if obs.check_collision(test_x, test_y, ant_radius):
+                    blocked = True
+                    break
+
+            if not blocked:
+                # 选择最接近目标方向的可行路径
+                d = abs(angle_offset)
+                if d < best_dist:
+                    best_dist = d
+                    best_x, best_y = test_x, test_y
+
+        if best_dist < float('inf'):
+            return best_x, best_y
+
+        # 所有方向都 blocked，停在原地
+        return self.x, self.y
 
     def _update_animation(self, dt, moving=True):
         dx = self.x - self.prev_x

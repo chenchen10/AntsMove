@@ -14,6 +14,7 @@ from config import (
 )
 from ants_data import ANT_BY_ID
 from ant_sprite import Ant
+from obstacle import generate_obstacles
 from ui_elements import draw_card, draw_button
 from ui_minimap import MiniMap
 import font_helper
@@ -124,6 +125,10 @@ class PlayingScene:
 
         # ── 绘制三区域地面标识 ──
         self._draw_zone_ground(screen, cam)
+
+        # ── 绘制障碍物（地面层之上，游戏实体之下） ──
+        for obs in getattr(ctx, 'obstacles', []):
+            obs.draw(screen, cam)
 
         # ── 顶部信息栏 ──
         minutes = int(ctx.level_timer) // 60
@@ -383,9 +388,9 @@ class PlayingScene:
         """绘制三区域标注标签：半透明胶囊样式"""
         ctx = self.ctx
         zones = [
-            ('left',   '基础区 ×1.0', ZONE_THEME_COLORS.get('left', (255, 200, 220))),
-            ('center', '稀有区 ×1.5', ZONE_THEME_COLORS.get('center', (180, 230, 160))),
-            ('right',  '基础区 ×1.0', ZONE_THEME_COLORS.get('right', (255, 220, 120))),
+            ('left',   '稀有区 ×1.5', ZONE_THEME_COLORS.get('left', (255, 200, 220))),
+            ('center', '普通区 ×1.0', ZONE_THEME_COLORS.get('center', (180, 230, 160))),
+            ('right',  '高阶区 ×2.0', ZONE_THEME_COLORS.get('right', (255, 220, 120))),
         ]
         label_font = font_helper.get_font(14)
         padding_x, padding_y = 12, 5
