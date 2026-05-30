@@ -278,62 +278,78 @@ class Ant(pygame.sprite.Sprite):
         return False
 
     def _avoid_obstacles(self, new_x, new_y, dir_x, dir_y, move_dist):
-        """碰撞绕行：沿路径逐段检测，碰撞时尝试绕行或沿障碍物表面滑动"""
+        """碰撞绕行：沿路径逐段检测，碰撞时尝试绕行、滑动或沿原方向最大安全距离前进"""
         ant_radius = self.size // 2
-        step = max(ant_radius // 2, 4)  # 采样步长（缩小为半径一半，更精细）
         total_dist = math.sqrt((new_x - self.x) ** 2 + (new_y - self.y) ** 2)
+        min_step = 2  # 最小采样步长
 
-        def _path_clear(sx, sy, ex, ey):
-            """检查从(sx,sy)到(ex,ey)的路径+终点是否无障碍"""
-            d = math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2)
-            # 先检查终点
+        def _point_clear(x, y):
+            """检查单个点是否无障碍"""
             for obs in self.obstacles:
-                if obs.check_collision(ex, ey, ant_radius):
+                if obs.check_collision(x, y, ant_radius):
                     return False
-            if d < 1:
-                return True
-            n = max(1, int(d / step))
-            for i in range(1, n):
-                t = i / n
-                cx = sx + (ex - sx) * t
-                cy = sy + (ey - sy) * t
-                for obs in self.obstacles:
-                    if obs.check_collision(cx, cy, ant_radius):
-                        return False
             return True
 
-        # 检查原路径是否碰撞
-        if _path_clear(self.x, self.y, new_x, new_y):
-            return new_x, new_y
+        def _max_safe_dist(sx, sy, dx, dy, max_d):
+            """沿(dx,dy)方向从(sx,sy)出发，找到最大安全前进距离（二分法）"""
+            # 逐步从最小步长开始探测
+            for start in [min_step, ant_radius // 2, ant_radius]:
+                if start <= max_d and _point_clear(sx + dx * start, sy + dy * start):
+                    lo, hi = start, max_d
+                    for _ in range(10):
+                        mid = (lo + hi) / 2
+                        if _point_clear(sx + dx * mid, sy + dy * mid):
+                            lo = mid
+                        else:
+                            hi = mid
+                    return lo
+            return 0
 
-        # 阶段1：尝试多个角度绕行（更多角度、不同距离）
+        # 检查原路径是否碰撞
+        if _point_clear(new_x, new_y):
+            d = total_dist
+            if d < 1:
+                return new_x, new_y
+            n = max(1, int(d / min_step))
+            path_ok = True
+            for i in range(1, n):
+                t = i / n
+                cx = self.x + (new_x - self.x) * t
+                cy = self.y + (new_y - self.y) * t
+                if not _point_clear(cx, cy):
+                    path_ok = False
+                    break
+            if path_ok:
+                return new_x, new_y
+
+        # 阶段1：沿原方向找到最大安全前进距离
+        safe_dist = _max_safe_dist(self.x, self.y, dir_x, dir_y, total_dist)
+        if safe_dist > min_step:
+            return self.x + dir_x * safe_dist, self.y + dir_y * safe_dist
+
+        # 阶段2：尝试多个角度绕行
         best_x, best_y = None, None
         best_angle = float('inf')
+        short_dist = min(total_dist, ant_radius * 4)
 
-        # 先尝试不同距离的绕行
-        for dist_frac in [1.0, 0.7, 0.5, 0.3]:
-            test_dist = total_dist * dist_frac
-            if test_dist < step:
-                continue
-            for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]:
-                cos_a = math.cos(angle_offset)
-                sin_a = math.sin(angle_offset)
-                test_dir_x = dir_x * cos_a - dir_y * sin_a
-                test_dir_y = dir_x * sin_a + dir_y * cos_a
-                test_x = self.x + test_dir_x * test_dist
-                test_y = self.y + test_dir_y * test_dist
-
-                if 10 < test_x < 4190 and 10 < test_y < 840:
-                    if _path_clear(self.x, self.y, test_x, test_y):
-                        d = abs(angle_offset)
-                        if d < best_angle:
-                            best_angle = d
-                            best_x, best_y = test_x, test_y
+        for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]:
+            cos_a = math.cos(angle_offset)
+            sin_a = math.sin(angle_offset)
+            test_dir_x = dir_x * cos_a - dir_y * sin_a
+            test_dir_y = dir_x * sin_a + dir_y * cos_a
+            sd = _max_safe_dist(self.x, self.y, test_dir_x, test_dir_y, short_dist)
+            if sd > min_step:
+                test_x = self.x + test_dir_x * sd
+                test_y = self.y + test_dir_y * sd
+                d = abs(angle_offset)
+                if d < best_angle:
+                    best_angle = d
+                    best_x, best_y = test_x, test_y
 
         if best_x is not None:
             return best_x, best_y
 
-        # 阶段2：沿最近障碍物的表面滑动
+        # 阶段3：沿最近障碍物推开方向滑动
         nearest_obs = None
         nearest_dist = float('inf')
         for obs in self.obstacles:
@@ -347,50 +363,41 @@ class Ant(pygame.sprite.Sprite):
                 nearest_obs = obs
 
         if nearest_obs is not None:
-            # 计算远离障碍物的方向
             cx = max(nearest_obs.rect.left, min(self.x, nearest_obs.rect.right))
             cy = max(nearest_obs.rect.top, min(self.y, nearest_obs.rect.bottom))
             push_dx = self.x - cx
             push_dy = self.y - cy
             push_len = math.hypot(push_dx, push_dy)
-            if push_len > 0:
+            if push_len > 1:
                 push_dx /= push_len
                 push_dy /= push_len
             else:
                 push_dx = dir_x if abs(dir_x) > 0.01 else 1.0
                 push_dy = dir_y if abs(dir_y) > 0.01 else 0.0
-                push_len = math.hypot(push_dx, push_dy)
-                push_dx /= push_len
-                push_dy /= push_len
+                pl = math.hypot(push_dx, push_dy)
+                push_dx /= pl
+                push_dy /= pl
 
-            # 尝试沿推开方向的两个垂直方向滑动（沿障碍物表面）
+            # 沿推开方向前进
+            push_dist = _max_safe_dist(self.x, self.y, push_dx, push_dy, ant_radius * 3)
+            if push_dist > min_step:
+                return self.x + push_dx * push_dist, self.y + push_dy * push_dist
+
+            # 沿推开方向的垂直方向（沿障碍物表面）滑动
             for perp_sign in [1, -1]:
                 slide_x = -push_dy * perp_sign
                 slide_y = push_dx * perp_sign
-                for slide_frac in [0.8, 0.5, 0.3]:
-                    slide_dist = min(total_dist * slide_frac, ant_radius * 3)
-                    test_x = self.x + slide_x * slide_dist
-                    test_y = self.y + slide_y * slide_dist
-                    if 10 < test_x < 4190 and 10 < test_y < 840:
-                        if _path_clear(self.x, self.y, test_x, test_y):
-                            return test_x, test_y
+                sd = _max_safe_dist(self.x, self.y, slide_x, slide_y, ant_radius * 3)
+                if sd > min_step:
+                    return self.x + slide_x * sd, self.y + slide_y * sd
 
-            # 尝试沿推开方向推开
-            for push_frac in [1.0, 0.5, 0.3]:
-                push_dist = ant_radius * 2 * push_frac
-                test_x = self.x + push_dx * push_dist
-                test_y = self.y + push_dy * push_dist
-                if 10 < test_x < 4190 and 10 < test_y < 840:
-                    if _path_clear(self.x, self.y, test_x, test_y):
-                        return test_x, test_y
-
-        # 阶段3：沿原方向前进一小段
-        for frac in [0.3, 0.2, 0.1]:
-            test_x = self.x + dir_x * step * frac * 4
-            test_y = self.y + dir_y * step * frac * 4
-            if 10 < test_x < 4190 and 10 < test_y < 840:
-                if _path_clear(self.x, self.y, test_x, test_y):
-                    return test_x, test_y
+        # 阶段4：最后尝试任意方向短距离移动
+        for angle in [0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5, 2.0, -2.0, math.pi]:
+            dx = math.cos(angle)
+            dy = math.sin(angle)
+            sd = _max_safe_dist(self.x, self.y, dx, dy, ant_radius * 2)
+            if sd > min_step:
+                return self.x + dx * sd, self.y + dy * sd
 
         return self.x, self.y
 
