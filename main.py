@@ -120,6 +120,8 @@ def _get_sweet_edge_pos(sweet, ant_x, ant_y):
 
 class GameState:
     def __init__(self):
+        # macOS 触控板：禁用 SDL 自动合成的触控→鼠标事件，避免拖拽状态被意外重置
+        os.environ['SDL_TOUCH_MOUSE_EVENTS'] = '0'
         pygame.init()
         pygame.font.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -311,6 +313,9 @@ class GameState:
                             self.state = 'title'
 
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    # 双保险：跳过触控合成的鼠标事件（macOS 触控板）
+                    if hasattr(event, 'touch') and event.touch:
+                        continue
                     mx, my = event.pos
                     # P2: 鼠标拖拽视野 - 检测是否为拖拽起始
                     if self.state == 'playing' and not self.panel_active and not self.menu_open and not self.nest_menu_open:
@@ -335,6 +340,9 @@ class GameState:
                     if not self._dragging and not self._drag_clicked_on_sweet:
                         self._handle_click(mx, my)
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    # 双保险：跳过触控合成的鼠标事件（macOS 触控板）
+                    if hasattr(event, 'touch') and event.touch:
+                        continue
                     if self._dragging and not self._drag_moved:
                         mx, my = event.pos
                         if not self._drag_clicked_on_sweet:
@@ -732,6 +740,8 @@ class GameState:
         self.nest_menu_open = False
         self._dragging = False
         self._drag_moved = False
+        self._drag_prev_x = 0
+        self._drag_prev_y = 0
 
         # Camera: 初始视角居中对准中间核心区域
         self.camera = Camera()
