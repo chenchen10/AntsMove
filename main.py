@@ -246,12 +246,11 @@ class GameState:
         self.zone_manager = None
         self.obstacles = []
 
-        # 鼠标拖拽视野状态
+        # 鼠标拖拽视野状态（增量式拖拽模型）
         self._dragging = False
-        self._drag_start_x = 0
-        self._drag_start_y = 0
-        self._drag_camera_start_x = 0.0
-        self._drag_camera_start_y = 0.0
+        self._drag_prev_x = 0
+        self._drag_prev_y = 0
+        self._drag_moved = False
         self._drag_clicked_on_sweet = False
 
     def _get_scene(self, name):
@@ -330,20 +329,27 @@ class GameState:
                             on_minimap = MINIMAP_X <= mx <= MINIMAP_X + MINIMAP_W and MINIMAP_Y <= my <= MINIMAP_Y + MINIMAP_H
                             if not btn_menu.collidepoint(mx, my) and nest_dist > nest_r and not on_minimap:
                                 self._dragging = True
-                                self._drag_start_x = mx
-                                self._drag_start_y = my
-                                self._drag_camera_start_x = self.camera.x
-                                self._drag_camera_start_y = self.camera.y
+                                self._drag_prev_x = mx
+                                self._drag_prev_y = my
+                                self._drag_moved = False
                     if not self._dragging and not self._drag_clicked_on_sweet:
                         self._handle_click(mx, my)
                 if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    if self._dragging and not self._drag_moved:
+                        mx, my = event.pos
+                        if not self._drag_clicked_on_sweet:
+                            self._handle_click(mx, my)
                     self._dragging = False
                 if event.type == pygame.MOUSEMOTION and self._dragging:
                     mx, my = event.pos
-                    dx = self._drag_start_x - mx
-                    dy = self._drag_start_y - my
-                    self.camera.move_to(self._drag_camera_start_x + dx,
-                                        self._drag_camera_start_y + dy)
+                    dx = self._drag_prev_x - mx
+                    dy = self._drag_prev_y - my
+                    if not self._drag_moved and (abs(mx - self._drag_prev_x) > 3 or abs(my - self._drag_prev_y) > 3):
+                        self._drag_moved = True
+                    if dx != 0 or dy != 0:
+                        self.camera.move_by(dx, dy)
+                    self._drag_prev_x = mx
+                    self._drag_prev_y = my
                 # 触控板双指滑动：横向移动相机，纵向滚动UI面板
                 if event.type == pygame.MOUSEWHEEL:
                     if self.state == 'playing' and not self.panel_active and not self.menu_open and not self.nest_menu_open:
@@ -725,6 +731,7 @@ class GameState:
         self.item_uses = {}
         self.nest_menu_open = False
         self._dragging = False
+        self._drag_moved = False
 
         # Camera: 初始视角居中对准中间核心区域
         self.camera = Camera()
