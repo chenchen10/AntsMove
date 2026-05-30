@@ -11,7 +11,7 @@ import os
 
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, FPS,
-    SWEET_COLORS, WHITE, ZONE_CONFIG, GRINDER_SIZE,
+    SWEET_COLORS, WHITE, ZONE_CONFIG, GRINDER_SIZE, SCROLL_SPEED,
 )
 from region import (
     PLAYER_NEST_X, PLAYER_NEST_Y, AI_NEST_X, AI_NEST_Y,
@@ -345,10 +345,10 @@ class GameState:
                     if self.state == 'playing' and not self.panel_active and not self.menu_open and not self.nest_menu_open:
                         # 横向双指滑动 → 左右移动相机
                         if event.x != 0:
-                            self.camera.move_by(-event.x * 5, 0)
+                            self.camera.move_by(-event.x * SCROLL_SPEED, 0)
                         # 纵向双指滑动 → 也移动相机（与横向逻辑一致）
                         if event.y != 0:
-                            self.camera.move_by(0, -event.y * 5)
+                            self.camera.move_by(0, -event.y * SCROLL_SPEED)
                     elif self.achievement_panel_active:
                         self.achievement_ui.scroll(event.y)
                     elif self.task_panel_active:

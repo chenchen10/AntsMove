@@ -45,3 +45,6 @@ SWEET_SIZE_BASE = 50
 ANT_SIZE = 40
 STUN_DURATION = 0.5        # 秒（僵直时间）
 STUN_SPEED_MULT = 0.0      # 僵直时速度倍率
+
+# 相机滚动速度
+SCROLL_SPEED = 10
