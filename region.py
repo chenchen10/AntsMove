@@ -1,6 +1,7 @@
 """区域系统：三区域定义、巢穴位置、出生范围"""
 
 import random
+import math
 from config import (
     WORLD_WIDTH, WORLD_HEIGHT,
     ZONE_CONFIG,
@@ -51,11 +52,19 @@ def choose_refresh_region():
     return 'center'
 
 
+# 甜点巢穴安全半径：甜点不刷新在巢穴附近
+SWEET_NEST_SAFE_RADIUS = 150
+
+
 def get_random_sweet_pos(zone_name):
-    """在指定区域内随机生成甜点世界坐标"""
+    """在指定区域内随机生成甜点世界坐标，确保不在巢穴安全范围内"""
     cfg = ZONE_CONFIG[zone_name]
     x_min, x_max = cfg['x_range']
     y_min, y_max = cfg['y_range']
-    x = random.randint(x_min + 50, x_max - 50)
-    y = random.randint(y_min + 60, y_max - 60)
+    for _ in range(10):
+        x = random.randint(x_min + 50, x_max - 50)
+        y = random.randint(y_min + 60, y_max - 60)
+        if math.hypot(x - PLAYER_NEST_X, y - PLAYER_NEST_Y) >= SWEET_NEST_SAFE_RADIUS and \
+           math.hypot(x - AI_NEST_X, y - AI_NEST_Y) >= SWEET_NEST_SAFE_RADIUS:
+            return x, y
     return x, y

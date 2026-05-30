@@ -278,22 +278,33 @@ class Ant(pygame.sprite.Sprite):
         return False
 
     def _avoid_obstacles(self, new_x, new_y, dir_x, dir_y, move_dist):
-        """碰撞绕行：检测新位置是否与障碍物碰撞，若碰撞则尝试偏移绕行"""
+        """碰撞绕行：沿路径逐段检测，若碰撞则尝试偏移绕行"""
         ant_radius = self.size // 2
-        # 检查新位置是否碰撞
+        step = max(ant_radius, 4)  # 采样步长
+
+        # 沿路径逐段检测碰撞
         collision = False
-        for obs in self.obstacles:
-            if obs.check_collision(new_x, new_y, ant_radius):
-                collision = True
-                break
+        total_dist = math.sqrt((new_x - self.x) ** 2 + (new_y - self.y) ** 2)
+        if total_dist > 0:
+            num_steps = max(1, int(total_dist / step))
+            for i in range(1, num_steps + 1):
+                t = i / num_steps
+                cx = self.x + (new_x - self.x) * t
+                cy = self.y + (new_y - self.y) * t
+                for obs in self.obstacles:
+                    if obs.check_collision(cx, cy, ant_radius):
+                        collision = True
+                        break
+                if collision:
+                    break
 
         if not collision:
             return new_x, new_y
 
-        # 尝试8个方向绕行（原方向两侧各3个角度）
+        # 尝试8个方向绕行（原方向两侧各4个角度）
         best_x, best_y = new_x, new_y
         best_dist = float('inf')
-        target_dist = math.sqrt((new_x - self.x) ** 2 + (new_y - self.y) ** 2)
+        target_dist = total_dist
 
         for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2]:
             cos_a = math.cos(angle_offset)
@@ -303,15 +314,23 @@ class Ant(pygame.sprite.Sprite):
             test_x = self.x + test_dir_x * target_dist
             test_y = self.y + test_dir_y * target_dist
 
-            # 检查是否碰撞
+            # 逐段检查备选路径是否碰撞
             blocked = False
-            for obs in self.obstacles:
-                if obs.check_collision(test_x, test_y, ant_radius):
-                    blocked = True
-                    break
+            test_dist = math.sqrt((test_x - self.x) ** 2 + (test_y - self.y) ** 2)
+            if test_dist > 0:
+                num_steps = max(1, int(test_dist / step))
+                for i in range(1, num_steps + 1):
+                    t = i / num_steps
+                    cx = self.x + (test_x - self.x) * t
+                    cy = self.y + (test_y - self.y) * t
+                    for obs in self.obstacles:
+                        if obs.check_collision(cx, cy, ant_radius):
+                            blocked = True
+                            break
+                    if blocked:
+                        break
 
             if not blocked:
-                # 选择最接近目标方向的可行路径
                 d = abs(angle_offset)
                 if d < best_dist:
                     best_dist = d
