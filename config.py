@@ -65,9 +65,9 @@ WORLD_HEIGHT = 850
 CAMERA_MAX_X = max(0, WORLD_WIDTH - SCREEN_WIDTH)   # 3000
 CAMERA_MAX_Y = max(0, WORLD_HEIGHT - SCREEN_HEIGHT)  # 150
 
-# 区域配置（方案C：左×1.5/中×1.0/右×2.0）
+# 区域配置（方案C：左×1.8/中×1.0/右×2.0）
 ZONE_CONFIG = {
-    'left':   {'x_range': (0, 1399),    'y_range': (0, 850), 'multiplier': 1.5, 'refresh_interval': 8, 'spawn_prob': 0.30},
+    'left':   {'x_range': (0, 1399),    'y_range': (0, 850), 'multiplier': 1.8, 'refresh_interval': 8, 'spawn_prob': 0.30},
     'center': {'x_range': (1400, 2799), 'y_range': (0, 850), 'multiplier': 1.0, 'refresh_interval': 5, 'spawn_prob': 0.40},
     'right':  {'x_range': (2800, 4199), 'y_range': (0, 850), 'multiplier': 2.0, 'refresh_interval': 12, 'spawn_prob': 0.30},
 }
@@ -100,7 +100,7 @@ CREATURE_SPAWN_BLINK_DURATION = 0.8   # 昆虫出现闪烁持续时间（秒）
 CREATURE_SPAWN_BLINK_LOOPS = 2        # 闪烁循环次数
 CREATURE_SPAWN_BLINK_MAX_ON_SCREEN = 4  # 同时闪烁的最大昆虫数
 CREATURE_DEATH_ANIM_DURATION = 0.6    # 昆虫死亡动画持续时间（秒）
-CREATURE_MAX_PER_ZONE = 2             # 同一区域同时存在的昆虫数量上限
+CREATURE_MAX_PER_ZONE = 3             # 同一区域同时存在的昆虫数量上限
 CREATURE_SPEED_VARIATION = 0.2        # 昆虫移动速度随机浮动范围（±20%）
 
 # 昆虫颜色映射（回退绘制用）

@@ -10,7 +10,7 @@ CREATURE_BY_ID = {
         'name': '瓢虫',
         'hp': 3,
         'speed': 180,
-        'coin_per': 5,
+        'coin_per': 6,
         'special': None,          # 无特殊机制
         'color_key': 'ladybug',   # 回退绘制颜色key
     },
@@ -19,7 +19,7 @@ CREATURE_BY_ID = {
         'name': '毛毛虫',
         'hp': 8,
         'speed': 80,
-        'coin_per': 15,
+        'coin_per': 18,
         'special': None,
         'color_key': 'caterpillar',
     },

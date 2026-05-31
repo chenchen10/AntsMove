@@ -53,19 +53,19 @@ class TestCreaturesData:
         assert set(CREATURE_TYPE_IDS) == {'ladybug', 'caterpillar'}
 
     def test_ladybug_stats(self):
-        """瓢虫属性：HP=3，移速180，金币5"""
+        """瓢虫属性：HP=3，移速180，金币6"""
         d = get_creature_data('ladybug')
         assert d['hp'] == 3
         assert d['speed'] == 180
-        assert d['coin_per'] == 5
+        assert d['coin_per'] == 6
         assert d['special'] is None
 
     def test_caterpillar_stats(self):
-        """毛毛虫属性：HP=8，移速80，金币15"""
+        """毛毛虫属性：HP=8，移速80，金币18"""
         d = get_creature_data('caterpillar')
         assert d['hp'] == 8
         assert d['speed'] == 80
-        assert d['coin_per'] == 15
+        assert d['coin_per'] == 18
         assert d['special'] is None
 
     def test_get_creature_hp(self):
@@ -80,8 +80,8 @@ class TestCreaturesData:
 
     def test_get_creature_coin(self):
         """get_creature_coin 返回正确金币"""
-        assert get_creature_coin('ladybug') == 5
-        assert get_creature_coin('caterpillar') == 15
+        assert get_creature_coin('ladybug') == 6
+        assert get_creature_coin('caterpillar') == 18
 
     def test_creature_colors_defined(self):
         """回退绘制颜色已定义"""
@@ -146,8 +146,8 @@ class TestCreatureSprite:
         """昆虫金币奖励正确"""
         c1 = Creature('ladybug', 500, 400, 'center')
         c2 = Creature('caterpillar', 500, 400, 'center')
-        assert c1.coin_per == 5
-        assert c2.coin_per == 15
+        assert c1.coin_per == 6
+        assert c2.coin_per == 18
 
 
 # ══════════════════════════════════════════════
@@ -223,7 +223,7 @@ class TestCreatureManager:
 
     def test_zone_CREATURE_MAX_PER_ZONE(self):
         """CREATURE_MAX_PER_ZONE 配置正确"""
-        assert CREATURE_MAX_PER_ZONE == 2
+        assert CREATURE_MAX_PER_ZONE == 3
 
 
 # ══════════════════════════════════════════════
@@ -273,7 +273,7 @@ class TestZoneConfig:
 
     def test_zone_multipliers(self):
         """区域倍率正确"""
-        assert ZONE_CONFIG['left']['multiplier'] == 1.5
+        assert ZONE_CONFIG['left']['multiplier'] == 1.8
         assert ZONE_CONFIG['center']['multiplier'] == 1.0
         assert ZONE_CONFIG['right']['multiplier'] == 2.0
 
