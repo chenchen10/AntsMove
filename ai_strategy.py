@@ -1,4 +1,4 @@
-"""AI智能策略模块：区域权重打分 + 兵力分配 + 蚂蚁类型偏好
+"""AI智能策略模块：区域权重打分 + 兵力分配 + 蚂蚁类型偏好 + 昆虫目标评分
 
 核心规则：
 - AI目标选择基于区域权重打分（基础分 = 倍率/距离）
@@ -6,11 +6,17 @@
 - 高负重蚂蚁偏好就近基础区域
 - 20%随机扰动避免AI过于一致
 - 4种兵力分配策略根据战场态势切换
+- 第二期：昆虫目标评分（甜点权重 vs 昆虫权重统一选择）
 """
 
 import math
 import random
 from config import ZONE_CONFIG, SCREEN_WIDTH, WORLD_WIDTH
+from balance_config import (
+    get_stage_scaling, get_ai_difficulty_coeff, get_high_value_bonus,
+    DEFAULT_AI_DIFFICULTY,
+)
+from creature_sprite import Creature
 
 
 # ── 蚂蚁类型分类阈值（基于base_stats） ──
@@ -153,6 +159,100 @@ def choose_target_sweet(ant, alive_sweets, zone_manager, game_time=0.0,
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[0][1]
+
+
+# ── 第二期：昆虫目标评分 ──
+
+INSECT_DISTANCE_PENALTY = 0.002  # 昆虫距离衰减系数（1/500）
+
+
+def score_creature(ant, creature, zone_manager, game_time=0.0,
+                   ai_difficulty=None):
+    """为单个昆虫计算权重打分
+
+    AI权重公式：
+    昆虫权重 = insect金币 × 区域倍率 × 阶段倍率 × 难度系数 / (1 + 距离/500)
+    高价值加成：额外 ×1.3
+
+    Returns:
+        float: 昆虫得分（越高越优先）
+    """
+    dist = math.hypot(creature.x - ant.x, creature.y - ant.y)
+    dist = max(dist, 1.0)
+
+    # 区域倍率
+    if zone_manager:
+        multiplier = zone_manager.get_multiplier_for_creature(creature)
+    else:
+        multiplier = 1.0
+
+    # 阶段倍率
+    stage_mult = get_stage_scaling(game_time)
+
+    # 难度系数
+    diff_coeff = get_ai_difficulty_coeff(ai_difficulty)
+
+    # 高价值加成
+    high_value = get_high_value_bonus(creature.coin_per)
+
+    # 基础分 = 金币 × 区域倍率 × 阶段倍率 × 难度系数 / (1 + 距离/500)
+    base_score = (creature.coin_per * multiplier * stage_mult * diff_coeff * high_value
+                  / (1.0 + dist * INSECT_DISTANCE_PENALTY))
+
+    # 主场加成
+    zone = get_zone_for_x(creature.x)
+    if _is_home_territory(zone, ant.team):
+        base_score *= HOME_TERRITORY_BONUS
+
+    # 蚂蚁类型偏好（同甜点逻辑）
+    ant_type = classify_ant_type(ant)
+    if ant_type == 'speed':
+        if dist > 800:
+            base_score *= SPEED_LONG_RANGE_BONUS
+        if multiplier >= 1.5:
+            base_score *= 1.10
+    elif ant_type == 'carry':
+        if dist < 500:
+            base_score *= CARRY_LOCAL_BONUS
+        if multiplier <= 1.0:
+            base_score *= 1.05
+
+    # 20%随机扰动
+    perturbation = 1.0 + random.uniform(-RANDOM_PERTURBATION, RANDOM_PERTURBATION)
+    base_score *= perturbation
+
+    return base_score
+
+
+def choose_target(ant, alive_sweets, alive_creatures, zone_manager,
+                  game_time=0.0, ai_ants=None, player_ants=None,
+                  ai_difficulty=None):
+    """统一目标选择：对甜点和昆虫进行加权打分，返回得分最高的目标
+
+    甜点权重 = sweet.coin_per × 区域倍率 / (1 + 距离/500)
+    昆虫权重 = insect金币 × 区域倍率 × 阶段倍率 × 难度系数 / (1 + 距离/500)
+
+    Returns:
+        sweet/creature object or None
+    """
+    best_target = None
+    best_score = -1.0
+
+    # 甜点评分（使用现有逻辑）
+    for sweet in alive_sweets:
+        score = score_sweet(ant, sweet, zone_manager, game_time, ai_ants, player_ants)
+        if score > best_score:
+            best_score = score
+            best_target = sweet
+
+    # 昆虫评分
+    for creature in alive_creatures:
+        score = score_creature(ant, creature, zone_manager, game_time, ai_difficulty)
+        if score > best_score:
+            best_score = score
+            best_target = creature
+
+    return best_target
 
 
 def determine_army_strategy(game_time, ai_ants, player_ants, ai_grinder,

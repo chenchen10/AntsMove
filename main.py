@@ -44,7 +44,11 @@ from scenes import SCENE_MAP
 from ui_minimap import MINIMAP_X, MINIMAP_Y, MINIMAP_W, MINIMAP_H
 from camera import Camera
 from sweet_zone_manager import SweetZoneManager
-from ai_strategy import choose_target_sweet, determine_army_strategy
+from creature_manager import CreatureManager
+from creature_sprite import Creature
+from creatures_data import get_creature_coin
+from ai_strategy import choose_target_sweet, choose_target, determine_army_strategy
+from config import STUN_DURATION
 
 
 # ── FloatingText ──────────────────────────────────────────
@@ -244,6 +248,8 @@ class GameState:
 
         # 三区域甜点管理器
         self.zone_manager = None
+        self.creature_manager = None
+        self.creatures = []
         self.obstacles = []
 
         # 鼠标拖拽视野状态
@@ -322,6 +328,13 @@ class GameState:
                                 if dist < sweet.current_size // 2 + 10:
                                     self._drag_clicked_on_sweet = True
                                     break
+                        if not self._drag_clicked_on_sweet:
+                            for creature in self.creatures:
+                                if creature.alive:
+                                    dist = math.sqrt((mx - creature.x + self.camera.x) ** 2 + (my - creature.y + self.camera.y) ** 2)
+                                    if dist < creature.current_size // 2 + 10:
+                                        self._drag_clicked_on_sweet = True
+                                        break
                         if not self._drag_clicked_on_sweet:
                             # 不在UI元素上 → 开始拖拽
                             btn_menu = pygame.Rect(SCREEN_WIDTH - 44, 8, 36, 36)
@@ -778,6 +791,10 @@ class GameState:
         self.zone_manager = SweetZoneManager(self.level_data, self.assets)
         self.sweets = self.zone_manager.spawn_initial_sweets()
 
+        # 昆虫管理器（与甜点共享区域刷新计时器）
+        self.creature_manager = CreatureManager(self.assets)
+        self.creatures = self.creature_manager.spawn_initial_creatures()
+
         # Grinders（世界坐标：我方左区中心，敌方右区中心）
         self.player_grinder = Grinder(x=PLAYER_NEST_X, y=PLAYER_NEST_Y,
                                        color=(80, 130, 80), label="我方")
@@ -944,16 +961,22 @@ class GameState:
         for ant in self.ai_ants:
             self._update_ant(ant, dt, is_player=False)
 
-        # 三区域甜点刷新（V1.4）
+        # 三区域甜点刷新（V1.4）+ 昆虫刷新（共享计时器）
         if self.zone_manager:
-            new_sweets = self.zone_manager.update(dt)
+            new_sweets, new_creatures = self.zone_manager.update(dt, self.creature_manager)
             self.sweets.extend(new_sweets)
+            self.creatures.extend(new_creatures)
             # 清理已消灭的甜点
             self.sweets = [s for s in self.sweets if s.alive]
-            # 更新甜点闪烁动画
-            for sweet in self.sweets:
-                if sweet.alive:
-                    sweet.update_blink(dt)
+
+        # 昆虫更新（移动 + 死亡动画）
+        if self.creature_manager:
+            finished_creatures = self.creature_manager.update(dt)
+            for c in finished_creatures:
+                self.creature_manager.on_creature_death_anim_done(c)
+            # 清理已完成死亡动画的昆虫
+            self.creatures = [c for c in self.creatures
+                              if c.alive or c._dying]
 
         # Combat: check collisions between player and AI ants
         self._check_combat()
@@ -971,13 +994,18 @@ class GameState:
             return
 
         if ant.state == Ant.STATE_IDLE:
+            # 合并甜点和昆虫作为可选目标
             alive_sweets = [s for s in self.sweets if s.alive]
-            if alive_sweets:
+            alive_creatures = [c for c in self.creatures if c.alive]
+            all_targets = alive_sweets + alive_creatures
+
+            if all_targets:
                 if is_player:
-                    ant.target_sweet = min(alive_sweets, key=lambda s: math.hypot(s.x - ant.x, s.y - ant.y))
+                    ant.target_sweet = min(all_targets, key=lambda t: math.hypot(t.x - ant.x, t.y - ant.y))
                 else:
-                    ant.target_sweet = choose_target_sweet(
-                        ant, alive_sweets, self.zone_manager,
+                    # AI蚂蚁：统一目标选择（甜点+昆虫混合评分）
+                    ant.target_sweet = choose_target(
+                        ant, alive_sweets, alive_creatures, self.zone_manager,
                         game_time=self._elapsed_time,
                         ai_ants=self.ai_ants, player_ants=self.player_ants,
                     )
@@ -1018,23 +1046,67 @@ class GameState:
 
             if ant.eat_timer >= interval:
                 ant.eat_timer = 0.0
-                destroyed = ant.target_sweet.take_damage()
-                ant.storage += 1
-                ant.last_sweet_coin_per = ant.target_sweet.coin_per
-                ant.last_sweet_zone_multiplier = self.zone_manager.get_multiplier_for_sweet(ant.target_sweet) if self.zone_manager else 1.0
+                is_creature = isinstance(ant.target_sweet, Creature)
+                destroyed = ant.target_sweet.take_damage(attacker=ant)
 
-                # V1.4：甜点被消灭后触发区域刷新计时器
-                if destroyed and self.zone_manager:
-                    self.zone_manager.on_sweet_destroyed(ant.target_sweet)
+                # 第二期：蜜蜂反击僵直（固定0.5秒，不受防御属性影响）
+                if is_creature and ant.target_sweet.last_event == 'counter_attack':
+                    ant.state = Ant.STATE_STUNNED
+                    ant.stun_timer = ant.target_sweet.counter_stun_duration
+                    counter_color = (255, 80, 80)
+                    self.floating_texts.append(
+                        FloatingText("反击!", ant.x + random.randint(-5, 5), ant.y - 25,
+                                     counter_color, 0.8, 18))
+                    return
 
-                # 星级系统：玩家收集的HP计入统计
-                if is_player:
-                    self.collected_hp += 1
+                if is_creature:
+                    # 第二期：闪避/地形限制 — 攻击无效，不给金币
+                    if ant.target_sweet.last_event == 'dodged':
+                        dodge_text = "闪避!" if ant.target_sweet.special == 'dodge' else "无法攻击!"
+                        dodge_color = (200, 200, 200)
+                        self.floating_texts.append(
+                            FloatingText(dodge_text, ant.x + random.randint(-5, 5), ant.y - 25,
+                                         dodge_color, 0.6, 14))
+                        return
 
-                sweet_color = SWEET_COLORS.get(ant.target_sweet.sweet_type, (100, 255, 100))
-                self.floating_texts.append(
-                    FloatingText("+1", ant.x + random.randint(-5, 5), ant.y - 18,
-                                 sweet_color, 0.7, 16))
+                    # 昆虫：金币直接加到storage（不搬运回巢穴）
+                    coin = get_creature_coin(ant.target_sweet.creature_id)
+                    zone_mult = self.creature_manager.get_multiplier_for_creature(ant.target_sweet) if self.creature_manager else 1.0
+                    ant.storage += int(coin * zone_mult)
+                    ant.last_sweet_coin_per = 1  # 昆虫不走搬运流程
+                    ant.last_sweet_zone_multiplier = 1.0
+
+                    # 昆虫被消灭：清理引用
+                    if destroyed and self.creature_manager:
+                        self.creature_manager.on_creature_destroyed(ant.target_sweet)
+
+                    # 星级系统：玩家收集的HP计入统计
+                    if is_player:
+                        self.collected_hp += 1
+
+                    creature_color = (255, 200, 100)
+                    self.floating_texts.append(
+                        FloatingText(f"+{int(coin * zone_mult)}金币",
+                                     ant.x + random.randint(-5, 5), ant.y - 18,
+                                     creature_color, 0.7, 16))
+                else:
+                    # 甜点：原有逻辑
+                    ant.storage += 1
+                    ant.last_sweet_coin_per = ant.target_sweet.coin_per
+                    ant.last_sweet_zone_multiplier = self.zone_manager.get_multiplier_for_sweet(ant.target_sweet) if self.zone_manager else 1.0
+
+                    # V1.4：甜点被消灭后触发区域刷新计时器
+                    if destroyed and self.zone_manager:
+                        self.zone_manager.on_sweet_destroyed(ant.target_sweet)
+
+                    # 星级系统：玩家收集的HP计入统计
+                    if is_player:
+                        self.collected_hp += 1
+
+                    sweet_color = SWEET_COLORS.get(ant.target_sweet.sweet_type, (100, 255, 100))
+                    self.floating_texts.append(
+                        FloatingText("+1", ant.x + random.randint(-5, 5), ant.y - 18,
+                                     sweet_color, 0.7, 16))
             return
 
         if ant.state == Ant.STATE_RETURNING:
