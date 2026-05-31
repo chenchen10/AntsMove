@@ -211,6 +211,10 @@ class PlayingScene:
             if sweet.alive:
                 sweet.draw_with_hp_effect(screen, camera=cam)
 
+        # Draw creatures (insects) (with camera offset)
+        for creature in getattr(ctx, 'creatures', []):
+            creature.draw_with_hp_effect(screen, camera=cam)
+
         # Draw player ants (with camera offset)
         mx, my = pygame.mouse.get_pos()
         hover_ant = None
