@@ -71,33 +71,205 @@ class Creature(pygame.sprite.Sprite):
     def _update_image(self):
         """根据昆虫类型和HP比例选择对应图片或回退绘制"""
         hp_ratio = self.hp / self.max_hp if self.max_hp > 0 else 1.0
-        # 尝试加载asset图片
-        key = f'{self.creature_id}'
-        if key in self.assets:
-            self.image = self.assets[key]
+        # 尝试加载asset图片（支持嵌套结构 insect_sprites -> creature_id -> direction -> frames）
+        insect_sprites = self.assets.get('insect_sprites', {})
+        sprite_dict = insect_sprites.get(self.creature_id, {})
+        frames_n = sprite_dict.get('n', [])
+        if frames_n:
+            self.image = frames_n[0]
+        elif self.creature_id in self.assets:
+            self.image = self.assets[self.creature_id]
         else:
-            # 回退：根据HP比例绘制圆形
+            # 回退：根据HP比例绘制各昆虫的独特形状
             ratio = max(0.4, hp_ratio)
             self.current_size = max(20, int(self.base_size * ratio))
-            self.image = pygame.Surface((self.current_size, self.current_size), pygame.SRCALPHA)
-            color = CREATURE_COLORS.get(self.creature_id, (200, 200, 200))
-            c = self.current_size // 2
-            pygame.draw.circle(self.image, color, (c, c), c)
-            pygame.draw.circle(self.image, (255, 255, 255), (c, c), c, 2)
-            # 瓢虫加黑点装饰
-            if self.creature_id == 'ladybug':
-                for dx, dy in [(-0.25, -0.2), (0.25, -0.2), (0, 0.2), (-0.2, 0.25), (0.2, 0.25)]:
-                    px = int(c + dx * self.current_size)
-                    py = int(c + dy * self.current_size)
-                    pygame.draw.circle(self.image, (0, 0, 0), (px, py), max(2, c // 6))
-            # 毛毛虫加分节线
-            elif self.creature_id == 'caterpillar':
-                for i in range(1, 4):
-                    seg_y = int(self.current_size * i / 4)
-                    pygame.draw.line(self.image, (60, 140, 60),
-                                     (4, seg_y), (self.current_size - 4, seg_y), 2)
+            self.image = self._draw_fallback_insect(self.current_size)
         self.current_size = self.image.get_width()
         self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
+        self.current_size = self.image.get_width()
+        self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
+
+    def _draw_fallback_insect(self, size):
+        """程序化绘制各昆虫的独特形状（无PNG素材时的回退）"""
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        cx, cy = size // 2, size // 2
+        color = CREATURE_COLORS.get(self.creature_id, (200, 200, 200))
+
+        if self.creature_id == 'ladybug':
+            # 瓢虫：椭圆身体 + 黑点
+            body_w, body_h = int(size * 0.8), int(size * 0.65)
+            pygame.draw.ellipse(surf, color, (cx - body_w // 2, cy - body_h // 2, body_w, body_h))
+            pygame.draw.ellipse(surf, (255, 255, 255), (cx - body_w // 2, cy - body_h // 2, body_w, body_h), 2)
+            # 中线
+            pygame.draw.line(surf, (40, 0, 0), (cx, cy - body_h // 2 + 3), (cx, cy + body_h // 2 - 3), 2)
+            # 黑点
+            spots = [(-0.22, -0.12), (0.22, -0.12), (-0.15, 0.15), (0.15, 0.15), (0, 0.0)]
+            for dx, dy in spots:
+                pygame.draw.circle(surf, (20, 20, 20),
+                                   (int(cx + dx * size), int(cy + dy * size)),
+                                   max(2, size // 10))
+            # 头部
+            pygame.draw.circle(surf, (40, 20, 20), (cx, cy - body_h // 2 - 2), max(3, size // 8))
+
+        elif self.creature_id == 'caterpillar':
+            # 毛毛虫：多个圆球串联 + 蠕动分节
+            seg_count = 5
+            seg_r = max(3, int(size * 0.18))
+            spacing = int(size * 0.28)
+            start_x = cx - (seg_count - 1) * spacing // 2
+            for i in range(seg_count):
+                sx = start_x + i * spacing
+                # 颜色渐变：从深绿到浅绿
+                g_val = min(255, color[1] + i * 10)
+                seg_color = (color[0], g_val, color[2])
+                pygame.draw.circle(surf, seg_color, (sx, cy), seg_r)
+                pygame.draw.circle(surf, (255, 255, 255), (sx, cy), seg_r, 1)
+            # 头部（稍大）+ 触角
+            head_x = start_x - seg_r
+            pygame.draw.circle(surf, (color[0] - 20, color[1] + 20, color[2] - 10),
+                               (head_x, cy), seg_r + 2)
+            # 触角
+            pygame.draw.line(surf, (60, 120, 60),
+                             (head_x - 2, cy - seg_r), (head_x - 6, cy - seg_r - 6), 2)
+            pygame.draw.line(surf, (60, 120, 60),
+                             (head_x + 2, cy - seg_r), (head_x + 6, cy - seg_r - 6), 2)
+            # 眼睛
+            pygame.draw.circle(surf, (0, 0, 0), (head_x - 2, cy - 1), 1)
+            pygame.draw.circle(surf, (0, 0, 0), (head_x + 2, cy - 1), 1)
+
+        elif self.creature_id == 'cricket':
+            # 蟋蟀：扁平身体 + 长触角 + 强壮后腿
+            body_w, body_h = int(size * 0.7), int(size * 0.45)
+            pygame.draw.ellipse(surf, color, (cx - body_w // 2, cy - body_h // 2, body_w, body_h))
+            pygame.draw.ellipse(surf, (255, 255, 255), (cx - body_w // 2, cy - body_h // 2, body_w, body_h), 1)
+            # 头部
+            head_r = max(3, size // 7)
+            pygame.draw.circle(surf, color, (cx - body_w // 2 - head_r + 3, cy), head_r)
+            # 长触角
+            antenna_start = cx - body_w // 2 - head_r + 2
+            pygame.draw.line(surf, (80, 60, 30),
+                             (antenna_start, cy - 2), (antenna_start - size // 4, cy - size // 3), 1)
+            pygame.draw.line(surf, (80, 60, 30),
+                             (antenna_start, cy + 2), (antenna_start - size // 4, cy + size // 3), 1)
+            # 后腿（倒V形，体现跳跃能力）
+            leg_base_x = cx + body_w // 4
+            leg_tip_y = cy + body_h // 2 + size // 5
+            pygame.draw.line(surf, (80, 60, 30),
+                             (leg_base_x, cy + body_h // 2 - 2), (leg_base_x + size // 6, leg_tip_y), 2)
+            pygame.draw.line(surf, (80, 60, 30),
+                             (leg_base_x + size // 6, leg_tip_y), (leg_base_x + size // 10, leg_tip_y - size // 8), 2)
+            # 翅膀纹理
+            wing_y = cy - body_h // 2 + 2
+            pygame.draw.line(surf, (color[0] - 20, color[1] - 20, color[2]),
+                             (cx - body_w // 4, wing_y), (cx + body_w // 4, wing_y), 1)
+
+        elif self.creature_id == 'beetle':
+            # 甲虫：厚实椭圆 + 金属光泽 + 鳌角
+            body_w, body_h = int(size * 0.85), int(size * 0.7)
+            pygame.draw.ellipse(surf, color, (cx - body_w // 2, cy - body_h // 2, body_w, body_h))
+            # 金属光泽（高光椭圆）
+            highlight_w, highlight_h = body_w // 3, body_h // 4
+            hl_surf = pygame.Surface((highlight_w, highlight_h), pygame.SRCALPHA)
+            pygame.draw.ellipse(hl_surf, (255, 255, 255, 80), (0, 0, highlight_w, highlight_h))
+            surf.blit(hl_surf, (cx - highlight_w // 2, cy - body_h // 4))
+            # 边框
+            pygame.draw.ellipse(surf, (255, 255, 255), (cx - body_w // 2, cy - body_h // 2, body_w, body_h), 2)
+            # 中线
+            pygame.draw.line(surf, (max(0, color[0] - 40), max(0, color[1] - 40), max(0, color[2] - 40)),
+                             (cx, cy - body_h // 2 + 4), (cx, cy + body_h // 2 - 4), 2)
+            # 头部 + 鳎角
+            head_r = max(3, size // 7)
+            head_x = cx - body_w // 2 - head_r + 4
+            pygame.draw.circle(surf, color, (head_x, cy), head_r)
+            pygame.draw.circle(surf, (255, 255, 255), (head_x, cy), head_r, 1)
+            # 鳎角（V形）
+            horn_len = size // 5
+            pygame.draw.line(surf, (60, 40, 20),
+                             (head_x - 2, cy - 1), (head_x - horn_len, cy - horn_len // 2), 2)
+            pygame.draw.line(surf, (60, 40, 20),
+                             (head_x - 2, cy + 1), (head_x - horn_len, cy + horn_len // 2), 2)
+
+        elif self.creature_id == 'dragonfly':
+            # 蜻蜓：细长身体 + 透明翅膀
+            body_w, body_h = int(size * 0.15), int(size * 0.7)
+            # 细长腹部
+            pygame.draw.ellipse(surf, color, (cx - body_w // 2, cy - body_h // 2, body_w, body_h))
+            pygame.draw.ellipse(surf, (255, 255, 255), (cx - body_w // 2, cy - body_h // 2, body_w, body_h), 1)
+            # 头部（大复眼）
+            head_r = max(4, size // 6)
+            head_y = cy - body_h // 2 - head_r + 3
+            pygame.draw.circle(surf, color, (cx, head_y), head_r)
+            pygame.draw.circle(surf, (255, 255, 255), (cx, head_y), head_r, 1)
+            # 复眼
+            pygame.draw.circle(surf, (180, 220, 255), (cx - head_r // 2, head_y - 1), max(2, head_r // 3))
+            pygame.draw.circle(surf, (180, 220, 255), (cx + head_r // 2, head_y - 1), max(2, head_r // 3))
+            # 翅膀（4片，半透明蓝色）
+            wing_color = (150, 200, 255, 100)
+            wing_len = int(size * 0.4)
+            wing_w = int(size * 0.15)
+            # 上翅（左右各一片）
+            for side in (-1, 1):
+                wing_surf = pygame.Surface((wing_len, wing_w), pygame.SRCALPHA)
+                pygame.draw.ellipse(wing_surf, wing_color, (0, 0, wing_len, wing_w))
+                wx = cx + side * body_w // 2 - (0 if side > 0 else wing_len)
+                wy = cy - body_h // 4 - wing_w // 2
+                if side < 0:
+                    wing_surf = pygame.transform.flip(wing_surf, True, False)
+                surf.blit(wing_surf, (wx, wy))
+            # 下翅（稍小）
+            for side in (-1, 1):
+                wing_w2 = wing_w - 2
+                wing_len2 = wing_len - 4
+                wing_surf = pygame.Surface((wing_len2, wing_w2), pygame.SRCALPHA)
+                pygame.draw.ellipse(wing_surf, wing_color, (0, 0, wing_len2, wing_w2))
+                wx = cx + side * body_w // 2 - (0 if side > 0 else wing_len2)
+                wy = cy + body_h // 8 - wing_w2 // 2
+                if side < 0:
+                    wing_surf = pygame.transform.flip(wing_surf, True, False)
+                surf.blit(wing_surf, (wx, wy))
+
+        elif self.creature_id == 'bee':
+            # 蜜蜂：椭圆身体 + 黄黑条纹 + 翅膀
+            body_w, body_h = int(size * 0.65), int(size * 0.55)
+            # 身体
+            pygame.draw.ellipse(surf, color, (cx - body_w // 2, cy - body_h // 2, body_w, body_h))
+            pygame.draw.ellipse(surf, (255, 255, 255), (cx - body_w // 2, cy - body_h // 2, body_w, body_h), 1)
+            # 黄黑条纹（3条黑纹）
+            stripe_count = 3
+            for i in range(stripe_count):
+                stripe_x = cx - body_w // 4 + i * (body_w // 4)
+                stripe_h = body_h - 4
+                pygame.draw.rect(surf, (30, 30, 30),
+                                 (stripe_x - 2, cy - stripe_h // 2, 4, stripe_h))
+            # 头部
+            head_r = max(3, size // 7)
+            head_x = cx - body_w // 2 - head_r + 3
+            pygame.draw.circle(surf, (40, 30, 10), (head_x, cy), head_r)
+            # 眼睛
+            pygame.draw.circle(surf, (255, 255, 255), (head_x - 1, cy - 1), max(1, head_r // 3))
+            # 翅膀（半透明）
+            wing_color = (220, 220, 255, 90)
+            wing_len = int(size * 0.3)
+            wing_w = int(size * 0.15)
+            for side in (-1, 1):
+                wing_surf = pygame.Surface((wing_len, wing_w), pygame.SRCALPHA)
+                pygame.draw.ellipse(wing_surf, wing_color, (0, 0, wing_len, wing_w))
+                wx = cx + side * 2 - (0 if side > 0 else wing_len)
+                wy = cy - body_h // 2 - wing_w + 2
+                if side < 0:
+                    wing_surf = pygame.transform.flip(wing_surf, True, False)
+                surf.blit(wing_surf, (wx, wy))
+            # 尾针
+            tail_x = cx + body_w // 2
+            pygame.draw.line(surf, (60, 40, 20), (tail_x, cy), (tail_x + size // 6, cy), 2)
+
+        else:
+            # 未知昆虫：简单圆形
+            c = size // 2
+            pygame.draw.circle(surf, color, (c, c), c)
+            pygame.draw.circle(surf, (255, 255, 255), (c, c), c, 2)
+
+        return surf
 
     def take_damage(self):
         """受到伤害，HP归零时启动死亡动画。返回True表示昆虫被消灭。"""

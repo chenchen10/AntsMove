@@ -1,7 +1,7 @@
-"""昆虫数据定义（第一期：瓢虫+毛毛虫）
+"""昆虫数据定义（全部6种：瓢虫/蟋蟀/毛毛虫/甲虫/蜻蜓/蜜蜂）
 
 配置化设计，支持后续扩展更多昆虫类型。
-每个昆虫定义包含：HP、移速、金币奖励、特殊机制（预留）。
+每个昆虫定义包含：HP、移速、金币奖励、特殊机制。
 """
 
 CREATURE_BY_ID = {
@@ -11,8 +11,18 @@ CREATURE_BY_ID = {
         'hp': 3,
         'speed': 180,
         'coin_per': 6,
-        'special': None,          # 无特殊机制
-        'color_key': 'ladybug',   # 回退绘制颜色key
+        'special': None,
+        'color_key': 'ladybug',
+    },
+    'cricket': {
+        'id': 'cricket',
+        'name': '蟋蟀',
+        'hp': 5,
+        'speed': 150,
+        'coin_per': 10,
+        'special': 'dodge',       # 跳跃闪避：20%概率闪避攻击
+        'dodge_chance': 0.20,
+        'color_key': 'cricket',
     },
     'caterpillar': {
         'id': 'caterpillar',
@@ -22,6 +32,36 @@ CREATURE_BY_ID = {
         'coin_per': 18,
         'special': None,
         'color_key': 'caterpillar',
+    },
+    'beetle': {
+        'id': 'beetle',
+        'name': '甲虫',
+        'hp': 12,
+        'speed': 100,
+        'coin_per': 24,
+        'special': 'armor',       # 护甲：减伤20%
+        'armor_reduction': 0.20,
+        'color_key': 'beetle',
+    },
+    'dragonfly': {
+        'id': 'dragonfly',
+        'name': '蜻蜓',
+        'hp': 4,
+        'speed': 220,
+        'coin_per': 15,
+        'special': 'flying',      # 飞行：仅树顶地形可攻击
+        'color_key': 'dragonfly',
+    },
+    'bee': {
+        'id': 'bee',
+        'name': '蜜蜂',
+        'hp': 6,
+        'speed': 190,
+        'coin_per': 12,
+        'special': 'counter',     # 反击：被攻击时10%概率反击僵直
+        'counter_chance': 0.10,
+        'counter_stun_duration': 0.5,
+        'color_key': 'bee',
     },
 }
 
