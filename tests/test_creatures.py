@@ -428,3 +428,40 @@ class TestSpawnProbabilities:
         assert CREATURE_SPAWN_PROB['left'] == 0.14
         assert CREATURE_SPAWN_PROB['center'] == 0.29
         assert CREATURE_SPAWN_PROB['right'] == 0.10
+
+
+# ══════════════════════════════════════════════
+# 回归测试：SweetZoneManager.update() 签名
+# ══════════════════════════════════════════════
+
+class TestSweetZoneManagerSignature:
+    """回归测试：SweetZoneManager.update() 必须兼容 main.py 的调用方式"""
+
+    def test_update_accepts_creature_manager(self):
+        """update(dt, creature_manager) 不抛 TypeError"""
+        from sweet_zone_manager import SweetZoneManager
+        level_data = {'sweet': {'hp': 5, 'coin_per': 1}}
+        zone_mgr = SweetZoneManager(level_data, {})
+        creature_mgr = MagicMock()
+        # 不应抛出 TypeError: SweetZoneManager.update() takes 2 positional arguments but 3 were given
+        result = zone_mgr.update(0.1, creature_mgr)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_update_returns_tuple(self):
+        """update() 返回 (new_sweets, new_creatures) 元组"""
+        from sweet_zone_manager import SweetZoneManager
+        level_data = {'sweet': {'hp': 5, 'coin_per': 1}}
+        zone_mgr = SweetZoneManager(level_data, {})
+        result = zone_mgr.update(0.016)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_update_backward_compatible_no_arg(self):
+        """update(dt) 无 creature_manager 时仍可正常工作"""
+        from sweet_zone_manager import SweetZoneManager
+        level_data = {'sweet': {'hp': 5, 'coin_per': 1}}
+        zone_mgr = SweetZoneManager(level_data, {})
+        result = zone_mgr.update(0.016)
+        assert isinstance(result, tuple)
+        assert result == ([], [])
