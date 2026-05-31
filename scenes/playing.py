@@ -99,6 +99,20 @@ class PlayingScene:
                     ant.eat_timer = 0.0
                 return
 
+        # Click on creature → direct player ants
+        for creature in ctx.creatures:
+            if not creature.alive:
+                continue
+            dist = math.sqrt((mx - creature.x + cam.x) ** 2 + (my - creature.y + cam.y) ** 2)
+            if dist < creature.current_size // 2 + 10:
+                for ant in ctx.player_ants:
+                    if ant.state == Ant.STATE_STUNNED or ant.state == Ant.STATE_RETURNING:
+                        continue
+                    ant.target_sweet = creature
+                    ant.state = Ant.STATE_MOVING_TO_SWEET
+                    ant.eat_timer = 0.0
+                return
+
     # ── Drawing ──
 
     def draw(self, screen):
@@ -210,6 +224,10 @@ class PlayingScene:
         for sweet in ctx.sweets:
             if sweet.alive:
                 sweet.draw_with_hp_effect(screen, camera=cam)
+
+        # Draw creatures (with camera offset)
+        for creature in ctx.creatures:
+            creature.draw_with_hp_effect(screen, camera=cam)
 
         # Draw player ants (with camera offset)
         mx, my = pygame.mouse.get_pos()

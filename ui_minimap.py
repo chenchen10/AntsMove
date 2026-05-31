@@ -22,6 +22,7 @@ class MiniMap:
     PLAYER_COLOR = (70, 130, 220)
     AI_COLOR = (220, 80, 70)
     SWEET_COLOR = (255, 215, 0)
+    CREATURE_COLOR = (100, 200, 100)
     VIEWPORT_COLOR = (255, 255, 255, 180)
 
     def __init__(self):
@@ -113,6 +114,14 @@ class MiniMap:
             sx, sy = self._world_to_mini(sweet.x, sweet.y)
             if self.rect.collidepoint(sx, sy):
                 pygame.draw.circle(screen, self.SWEET_COLOR, (sx, sy), 3)
+
+        # 昆虫（绿色圆点）
+        for creature in getattr(ctx, 'creatures', []):
+            if not creature.alive:
+                continue
+            cx, cy = self._world_to_mini(creature.x, creature.y)
+            if self.rect.collidepoint(cx, cy):
+                pygame.draw.circle(screen, self.CREATURE_COLOR, (cx, cy), 3)
 
         # 障碍物（可碰撞=灰色方块，纯装饰=绿色小点）
         OBSTACLE_MINI_COLOR = (160, 160, 170)

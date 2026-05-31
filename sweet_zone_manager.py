@@ -42,9 +42,16 @@ class SweetZoneManager:
                 sweets.append(sweet)
         return sweets
 
-    def update(self, dt):
-        """每帧更新：检查各区域刷新计时器，到时间则刷新甜点。返回新生成的甜点列表。"""
+    def update(self, dt, creature_manager=None):
+        """每帧更新：检查各区域刷新计时器，到时间则刷新甜点或昆虫。
+
+        昆虫与甜点共享区域刷新计时器，每次刷新只生成一种。
+        creature_manager 不为 None 时，优先尝试生成昆虫（概率性）。
+
+        返回 (new_sweets, new_creatures) 元组。
+        """
         new_sweets = []
+        new_creatures = []
         for zone_name, cfg in ZONE_CONFIG.items():
             # 如果该区域已有甜点，不刷新
             if self._zone_sweets[zone_name] and self._zone_sweets[zone_name].alive:
@@ -56,12 +63,23 @@ class SweetZoneManager:
 
             if self._refresh_timers[zone_name] >= interval:
                 self._refresh_timers[zone_name] = 0.0
-                sweet = self._spawn_sweet(zone_name)
-                if sweet:
-                    self._zone_sweets[zone_name] = sweet
-                    new_sweets.append(sweet)
 
-        return new_sweets
+                # 尝试生成昆虫（概率性）
+                creature_spawned = False
+                if creature_manager:
+                    creature = creature_manager.try_spawn(zone_name)
+                    if creature:
+                        new_creatures.append(creature)
+                        creature_spawned = True
+
+                # 未生成昆虫时，生成甜点
+                if not creature_spawned:
+                    sweet = self._spawn_sweet(zone_name)
+                    if sweet:
+                        self._zone_sweets[zone_name] = sweet
+                        new_sweets.append(sweet)
+
+        return new_sweets, new_creatures
 
     def get_zone_for_sweet(self, sweet):
         """获取指定甜点所在区域的key"""
