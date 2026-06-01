@@ -90,6 +90,14 @@ class Creature(pygame.sprite.Sprite):
         self.last_event = None        # None | 'dodged' | 'counter_attack'
         self.counter_stun_duration = 0.0  # 蜜蜂反击僵直时长
 
+        # 帧动画状态
+        self._frames = []             # 当前方向的帧列表
+        self._frame_index = 0         # 当前帧索引
+        self._anim_timer = 0.0        # 动画计时器（秒）
+        # 动画速度：根据昆虫移速设置，快速昆虫动画快，慢速昆虫动画慢
+        # 基准：speed=150 → 0.15秒/帧，线性映射
+        self._anim_speed = max(0.08, 0.225 - (self.base_speed / 1000.0))
+
         self._update_image()
         self.start_spawn_blink()
 
@@ -101,7 +109,11 @@ class Creature(pygame.sprite.Sprite):
         sprite_dict = insect_sprites.get(self.creature_id, {})
         frames_n = sprite_dict.get('n', [])
         if frames_n:
-            self.image = frames_n[0]
+            self._frames = frames_n
+            # 确保 frame_index 在有效范围内
+            if self._frame_index >= len(self._frames):
+                self._frame_index = 0
+            self.image = self._frames[self._frame_index]
         else:
             # 回退：根据HP比例绘制圆形
             ratio = max(0.4, hp_ratio)
@@ -298,6 +310,15 @@ class Creature(pygame.sprite.Sprite):
 
         self.x = new_x
         self.y = new_y
+
+        # 帧动画推进：根据时间切换帧
+        if self._frames:
+            self._anim_timer += dt
+            if self._anim_timer >= self._anim_speed:
+                self._anim_timer -= self._anim_speed
+                self._frame_index = (self._frame_index + 1) % len(self._frames)
+                self.image = self._frames[self._frame_index]
+
         self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
         return False
 

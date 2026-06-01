@@ -48,8 +48,8 @@ def get_stage_scaling(game_time):
 # ── AI难度系数 ──
 
 AI_DIFFICULTY_COEFF = {
-    'easy': 0.3,
-    'medium': 0.6,
+    'easy': 0.5,
+    'medium': 0.85,
     'hard': 1.0,
 }
 

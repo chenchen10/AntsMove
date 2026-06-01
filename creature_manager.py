@@ -20,9 +20,9 @@ from region import get_zone_for_x, get_random_sweet_pos
 
 # 第二期：各区域昆虫刷新概率（与甜点共享刷新机会）
 CREATURE_SPAWN_PROB = {
-    'left': 0.14,
+    'left': 0.18,
     'center': 0.29,
-    'right': 0.10,
+    'right': 0.20,
 }
 
 

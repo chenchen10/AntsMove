@@ -12,6 +12,7 @@
 import math
 import random
 from config import ZONE_CONFIG, SCREEN_WIDTH, WORLD_WIDTH
+from region import get_zone_for_x
 from balance_config import (
     get_stage_scaling, get_ai_difficulty_coeff, get_high_value_bonus,
     DEFAULT_AI_DIFFICULTY,
@@ -163,7 +164,7 @@ def choose_target_sweet(ant, alive_sweets, zone_manager, game_time=0.0,
 
 # ── 第二期：昆虫目标评分 ──
 
-INSECT_DISTANCE_PENALTY = 0.002  # 昆虫距离衰减系数（1/500）
+INSECT_DISTANCE_PENALTY = 0.0005  # 昆虫距离衰减系数（与甜点接近，确保AI蚂蚁能有效选择远处昆虫）
 
 
 def score_creature(ant, creature, zone_manager, game_time=0.0,
@@ -182,7 +183,7 @@ def score_creature(ant, creature, zone_manager, game_time=0.0,
 
     # 区域倍率
     if zone_manager:
-        multiplier = zone_manager.get_multiplier_for_creature(creature)
+        multiplier = zone_manager.get_multiplier_for_sweet(creature)
     else:
         multiplier = 1.0
 
