@@ -69,8 +69,9 @@ class Sweet(pygame.sprite.Sprite):
         self.current_size = self.image.get_width()
         self.rect = self.image.get_rect(center=(int(self.x), int(self.y)))
 
-    def take_damage(self):
-        """受到伤害，HP归零时甜点消失。返回True表示甜点被消灭。"""
+    def take_damage(self, attacker=None):
+        """受到伤害，HP归零时甜点消失。返回True表示甜点被消灭。
+        attacker参数保留以兼容Creature接口，甜点不需要攻击者信息。"""
         if not self.alive:
             return False
         self.hp -= 1
