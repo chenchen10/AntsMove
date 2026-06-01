@@ -23,6 +23,8 @@ if 'config' in sys.modules and isinstance(sys.modules['config'], MagicMock):
     del sys.modules['config']
 if 'creatures_data' in sys.modules and isinstance(sys.modules['creatures_data'], MagicMock):
     del sys.modules['creatures_data']
+if 'terrain' in sys.modules and isinstance(sys.modules['terrain'], MagicMock):
+    del sys.modules['terrain']
 
 import pygame
 pygame.init()
@@ -35,6 +37,7 @@ from creatures_data import (
 )
 from creature_sprite import Creature
 from creature_manager import CreatureManager
+from terrain import TerrainType
 
 
 # ══════════════════════════════════════════════
@@ -377,14 +380,14 @@ class TestPhase2Creatures:
         c = Creature('dragonfly', 500, 400, 'center')
 
         # 模拟非树顶地形蚂蚁
-        fake_ant = type('Ant', (), {'terrain': 'forest'})()
+        fake_ant = type('Ant', (), {'terrain': TerrainType.FOREST})()
         result = c.take_damage(attacker=fake_ant)
         assert result is False
         assert c.last_event == 'dodged'
         assert c.hp == 4  # HP未减少
 
         # 模拟树顶地形蚂蚁
-        tree_ant = type('Ant', (), {'terrain': 'tree_top'})()
+        tree_ant = type('Ant', (), {'terrain': TerrainType.TREE_TOP})()
         result = c.take_damage(attacker=tree_ant)
         assert result is False  # 4次才死，第1次不死
         assert c.hp == 3  # HP减少了
@@ -392,7 +395,7 @@ class TestPhase2Creatures:
     def test_bee_counter_attack_stun(self):
         """蜜蜂10%概率反击僵直攻击者"""
         c = Creature('bee', 500, 400, 'center')
-        fake_ant = type('Ant', (), {'terrain': 'plain'})()
+        fake_ant = type('Ant', (), {'terrain': TerrainType.PLAIN})()
 
         # 多次测试验证反击概率
         import random

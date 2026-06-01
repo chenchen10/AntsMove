@@ -22,6 +22,7 @@ from config import (
     HP_BAR_W, HP_BAR_H, HP_BAR_BG, HP_BAR_FILL, HP_BAR_RADIUS, HP_BAR_GAP,
 )
 from creatures_data import get_creature_data, get_creature_special
+from terrain import TerrainType
 import font_helper
 
 # 昆虫刷新闪烁：全局计数器 + 排队队列
@@ -95,10 +96,12 @@ class Creature(pygame.sprite.Sprite):
     def _update_image(self):
         """根据昆虫类型和HP比例选择对应图片或回退绘制"""
         hp_ratio = self.hp / self.max_hp if self.max_hp > 0 else 1.0
-        # 尝试加载asset图片
-        key = f'{self.creature_id}'
-        if key in self.assets:
-            self.image = self.assets[key]
+        # 尝试从 insect_sprites 嵌套结构加载精灵图
+        insect_sprites = self.assets.get('insect_sprites', {})
+        sprite_dict = insect_sprites.get(self.creature_id, {})
+        frames_n = sprite_dict.get('n', [])
+        if frames_n:
+            self.image = frames_n[0]
         else:
             # 回退：根据HP比例绘制圆形
             ratio = max(0.4, hp_ratio)
@@ -175,7 +178,7 @@ class Creature(pygame.sprite.Sprite):
 
         # ── 蜻蜓飞行机制：非树顶地形蚂蚁无法攻击 ──
         if self.special == 'flight':
-            if attacker is None or getattr(attacker, 'terrain', None) != 'tree_top':
+            if attacker is None or getattr(attacker, 'terrain', None) != TerrainType.TREE_TOP:
                 self.last_event = 'dodged'  # 用dodged表示攻击无效
                 return False
 
