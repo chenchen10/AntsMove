@@ -8,6 +8,26 @@ import os
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
 SOUNDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds')
 DECO_DIR = os.path.join(ASSETS_DIR, 'deco')
+INSECT_DIR = os.path.join(ASSETS_DIR, 'insect')
+
+# 昆虫精灵定义：名称、尺寸、帧数
+INSECTS = {
+    'ladybug': {'size': (64, 64), 'frames': 3},
+    'caterpillar': {'size': (80, 40), 'frames': 4},
+    'cricket': {'size': (64, 64), 'frames': 3},
+    'beetle': {'size': (64, 64), 'frames': 3},
+    'dragonfly': {'size': (64, 72), 'frames': 3},
+    'bee': {'size': (64, 64), 'frames': 3},
+}
+INSECT_DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']
+
+# 自动生成昆虫精灵路径映射
+INSECT_IMAGE_PATHS = {}
+for _name, _cfg in INSECTS.items():
+    for _dir in INSECT_DIRS:
+        for _f in range(1, _cfg['frames'] + 1):
+            _key = f'{_name}_{_dir}_{_f}'
+            INSECT_IMAGE_PATHS[_key] = os.path.join(INSECT_DIR, _name, f'{_key}.png')
 
 # 障碍物装饰图片路径
 DECO_IMAGE_PATHS = {
@@ -374,6 +394,26 @@ def load_assets():
             color = SWEET_COLORS.get(sweet, (200, 200, 200))
             pygame.draw.circle(icon_surf, color, (icon_size[0] // 2, icon_size[1] // 2), icon_size[0] // 2)
             assets[icon_key] = icon_surf
+
+    # 加载昆虫精灵（insect_sprites[insect_name][direction] = [frame1, frame2, ...]）
+    insect_sprites = {}
+    for insect_name, insect_cfg in INSECTS.items():
+        insect_sprites[insect_name] = {}
+        target_size = insect_cfg['size']
+        for direction in INSECT_DIRS:
+            frames = []
+            for frame_idx in range(1, insect_cfg['frames'] + 1):
+                key = f'{insect_name}_{direction}_{frame_idx}'
+                path = INSECT_IMAGE_PATHS.get(key)
+                if path and os.path.exists(path):
+                    try:
+                        img = pygame.image.load(path).convert_alpha()
+                        img = pygame.transform.smoothscale(img, target_size)
+                        frames.append(img)
+                    except Exception:
+                        pass
+            insect_sprites[insect_name][direction] = frames
+    assets['insect_sprites'] = insect_sprites
 
     return assets
 

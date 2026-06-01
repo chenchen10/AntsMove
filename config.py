@@ -95,7 +95,7 @@ MINIMAP_BLINK_ALPHA_MIN = 100
 MINIMAP_BLINK_ALPHA_MAX = 255
 
 # 昆虫系统（第一期：瓢虫+毛毛虫）
-CREATURE_SIZE_BASE = 45                # 昆虫基础尺寸
+CREATURE_SIZE_BASE = 64                # 昆虫基础尺寸
 CREATURE_SPAWN_BLINK_DURATION = 0.8   # 昆虫出现闪烁持续时间（秒）
 CREATURE_SPAWN_BLINK_LOOPS = 2        # 闪烁循环次数
 CREATURE_SPAWN_BLINK_MAX_ON_SCREEN = 4  # 同时闪烁的最大昆虫数
