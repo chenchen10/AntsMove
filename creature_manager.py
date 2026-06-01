@@ -74,13 +74,24 @@ class CreatureManager:
         return creature
 
     def spawn_initial_creatures(self):
-        """初始刷新：每个区域各生成0-1只昆虫（概率性）"""
+        """初始刷新：每个区域保底生成1只昆虫，确保启动时可见"""
         creatures = []
         for zone_name in ['left', 'center', 'right']:
-            creature = self.try_spawn(zone_name)
+            creature = self.try_spawn_guaranteed(zone_name)
             if creature:
                 creatures.append(creature)
         return creatures
+
+    def try_spawn_guaranteed(self, zone_name):
+        """初始保底生成：跳过概率判定，直接在指定区域生成一只昆虫。"""
+        if not self.can_spawn_in_zone(zone_name):
+            return None
+
+        creature_id = random.choice(CREATURE_TYPE_IDS)
+        x, y = self._get_random_creature_pos(zone_name)
+        creature = Creature(creature_id, x, y, zone_name, self.assets)
+        self._zone_creatures[zone_name].append(creature)
+        return creature
 
     def update(self, dt):
         """每帧更新：昆虫移动 + 死亡动画。返回已完成死亡动画的昆虫列表（用于清理）。"""
@@ -128,6 +139,14 @@ class CreatureManager:
         zone = creature.zone_name
         if creature in self._zone_creatures.get(zone, []):
             self._zone_creatures[zone].remove(creature)
+
+    def cleanup_dead_creatures(self):
+        """安全清理：移除所有不在alive也不在dying状态的昆虫，防止残留"""
+        for zone_name in self._zone_creatures:
+            self._zone_creatures[zone_name] = [
+                c for c in self._zone_creatures[zone_name]
+                if c.alive or c._dying
+            ]
 
     def _get_random_creature_pos(self, zone_name):
         """在指定区域内随机生成昆虫世界坐标"""

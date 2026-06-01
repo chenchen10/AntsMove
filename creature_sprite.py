@@ -267,7 +267,12 @@ class Creature(pygame.sprite.Sprite):
             self.current_size = new_size
             # 淡出
             self._death_alpha = int(255 * (1.0 - progress))
-            return progress >= 1.0  # 返回True表示动画完成
+            if progress >= 1.0:
+                # 动画完成：明确重置状态，确保后续不会被误判为"存活"或"死亡动画中"
+                self._dying = False
+                self.alive = False
+                return True
+            return False
 
         # 区域内缓慢移动
         self._move_timer += dt

@@ -977,6 +977,8 @@ class GameState:
             # 清理已完成死亡动画的昆虫
             self.creatures = [c for c in self.creatures
                               if c.alive or c._dying]
+            # 安全清理：移除区域管理器中残留的非活跃昆虫
+            self.creature_manager.cleanup_dead_creatures()
 
         # Combat: check collisions between player and AI ants
         self._check_combat()
