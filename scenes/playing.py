@@ -211,6 +211,11 @@ class PlayingScene:
             if sweet.alive:
                 sweet.draw_with_hp_effect(screen, camera=cam)
 
+        # Draw creatures (with camera offset)
+        for creature in ctx.creatures:
+            if creature.alive or creature._dying:
+                creature.draw_with_hp_effect(screen, camera=cam)
+
         # Draw player ants (with camera offset)
         mx, my = pygame.mouse.get_pos()
         hover_ant = None
@@ -232,6 +237,15 @@ class PlayingScene:
             if ant.image.get_rect(center=(int(ant_sx), int(ant_sy))).collidepoint(mx, my):
                 hover_ant = ant
 
+        # Draw creatures hover detection (with camera offset)
+        hover_creature = None
+        for creature in ctx.creatures:
+            if creature.alive:
+                cr_sx, cr_sy = cam.world_to_screen(creature.x, creature.y)
+                cr_rect = creature.image.get_rect(center=(int(cr_sx), int(cr_sy)))
+                if cr_rect.collidepoint(mx, my):
+                    hover_creature = creature
+
         # Hover tooltip (screen coordinates, no camera offset needed)
         if hover_ant:
             name = hover_ant.ant_data['name']
@@ -243,6 +257,21 @@ class PlayingScene:
             tip_x = min(mx + 12, SCREEN_WIDTH - tip_w - 4)
             tip_y = max(my - tip_h - 4, 0)
             tip_rect = pygame.Rect(tip_x, tip_y, tip_w, tip_h)
+            tip_bg = pygame.Surface((tip_w, tip_h), pygame.SRCALPHA)
+            pygame.draw.rect(tip_bg, (30, 30, 50, 200), (0, 0, tip_w, tip_h), border_radius=6)
+            screen.blit(tip_bg, (tip_x, tip_y))
+            screen.blit(tip_surf, (tip_x + 6, tip_y + 4))
+
+        # Creature hover tooltip
+        if hover_creature:
+            c_name = hover_creature.creature_name
+            c_hp = int(hover_creature.hp) if isinstance(hover_creature.hp, float) and hover_creature.hp == int(hover_creature.hp) else hover_creature.hp
+            tip = f"{c_name} HP:{c_hp}/{int(hover_creature.max_hp)}"
+            tip_surf = font_helper.get_font(14).render(tip, True, (255, 220, 180))
+            tip_w = tip_surf.get_width() + 12
+            tip_h = tip_surf.get_height() + 8
+            tip_x = min(mx + 12, SCREEN_WIDTH - tip_w - 4)
+            tip_y = max(my - tip_h - 4, 0)
             tip_bg = pygame.Surface((tip_w, tip_h), pygame.SRCALPHA)
             pygame.draw.rect(tip_bg, (30, 30, 50, 200), (0, 0, tip_w, tip_h), border_radius=6)
             screen.blit(tip_bg, (tip_x, tip_y))
