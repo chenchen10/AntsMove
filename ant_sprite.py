@@ -330,7 +330,7 @@ class Ant(pygame.sprite.Sprite):
         # 阶段2：尝试多个角度绕行
         best_x, best_y = None, None
         best_angle = float('inf')
-        short_dist = min(total_dist, ant_radius * 4)
+        short_dist = min(total_dist, max(100, ant_radius * 6))
 
         for angle_offset in [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5]:
             cos_a = math.cos(angle_offset)
