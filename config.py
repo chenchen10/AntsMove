@@ -115,3 +115,6 @@ CREATURE_COLORS = {
 
 # 相机滚动速度
 SCROLL_SPEED = 10
+
+# 行走动画帧率
+WALK_ANIM_FPS = 12

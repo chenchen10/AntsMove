@@ -8,6 +8,8 @@ import sys
 import math
 import random
 import os
+import logging
+import datetime
 
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, FPS,
@@ -21,6 +23,7 @@ from region import (
 from assets import load_assets
 from ants_data import (
     ANT_BY_ID, get_carry_capacity, get_speed, get_defense,
+    TRAIT_SUPREME,
 )
 from ai_data import (
     get_max_team_size, generate_ai_team,
@@ -970,6 +973,9 @@ class GameState:
                 for ant in self.player_ants:
                     ant.speed /= 2.0
 
+        # AI蚂蚁战斗感知（检测附近玩家蚂蚁，触发追击）
+        self._check_ai_combat_detection()
+
         # Update player ants
         for ant in self.player_ants:
             self._update_ant(ant, dt, is_player=True)
@@ -1005,11 +1011,65 @@ class GameState:
             ft.update(dt)
         self.floating_texts = [ft for ft in self.floating_texts if ft.alive]
 
+    COMBAT_DETECT_RANGE = 80  # AI蚂蚁战斗感知范围
+    CHASE_TIMEOUT = 3.0       # 追击超时时间（秒）
+    CHASE_SPEED_MULT = 0.8    # 追击移动速度倍率
+
+    def _check_ai_combat_detection(self):
+        """AI蚂蚁战斗感知：检测附近玩家蚂蚁，触发追击（PRD v2.0 Bug2）"""
+        current_time = pygame.time.get_ticks() / 1000.0
+        for a_ant in self.ai_ants:
+            if a_ant.state in (Ant.STATE_STUNNED, Ant.STATE_CHASING):
+                continue
+            # 检测是否有玩家蚂蚁进入感知范围
+            for p_ant in self.player_ants:
+                if p_ant.state == Ant.STATE_STUNNED:
+                    continue
+                dist = math.hypot(p_ant.x - a_ant.x, p_ant.y - a_ant.y)
+                if dist <= self.COMBAT_DETECT_RANGE:
+                    # 进入追击状态
+                    a_ant._original_target = a_ant.target_sweet
+                    a_ant._chase_target = p_ant
+                    a_ant._chase_timer = 0.0
+                    a_ant.state = Ant.STATE_CHASING
+                    logging.debug(
+                        "[ANT_DEBUG] ant_id=%d team=%s pos=(%.1f,%.1f) event=CHASE_START target_id=%d",
+                        a_ant.ant_id, a_ant.team, a_ant.x, a_ant.y, p_ant.ant_id)
+                    break  # 找到一个目标即可
+
     def _update_ant(self, ant, dt, is_player):
         if ant.state == Ant.STATE_STUNNED:
             ant.stun_timer -= dt
             if ant.stun_timer <= 0:
                 ant.state = Ant.STATE_IDLE
+            return
+
+        if ant.state == Ant.STATE_CHASING:
+            ant._chase_timer += dt
+            # 追击超时或目标消失：切换回原目标
+            if ant._chase_timer >= self.CHASE_TIMEOUT or ant._chase_target is None or not ant._chase_target.alive:
+                logging.debug(
+                    "[ANT_DEBUG] ant_id=%d team=%s pos=(%.1f,%.1f) event=CHASE_TIMEOUT timer=%.1f",
+                    ant.ant_id, ant.team, ant.x, ant.y, ant._chase_timer)
+                ant._chase_target = None
+                ant._chase_timer = 0.0
+                # 恢复原目标或切回采集
+                if ant._original_target and ant._original_target.alive:
+                    ant.target_sweet = ant._original_target
+                    ant.state = Ant.STATE_MOVING_TO_SWEET
+                else:
+                    ant.state = Ant.STATE_IDLE
+                ant._original_target = None
+                return
+
+            # 追击移动：沿玩家蚂蚁方向，速度×0.8
+            tx, ty = ant._chase_target.x, ant._chase_target.y
+            dist = math.hypot(tx - ant.x, ty - ant.y)
+            if dist <= 30:
+                # 追上目标，触发战斗检测（由 _check_combat 处理）
+                ant.move_toward(tx, ty, dt, speed_mult=self.CHASE_SPEED_MULT)
+            else:
+                ant.move_toward(tx, ty, dt, speed_mult=self.CHASE_SPEED_MULT)
             return
 
         if ant.state == Ant.STATE_IDLE:
@@ -1035,6 +1095,27 @@ class GameState:
             if ant.target_sweet is None or not ant.target_sweet.alive:
                 ant.state = Ant.STATE_IDLE
                 return
+
+            # 连续传送>=3次仍未脱困，切换目标
+            if ant.needs_target_switch():
+                alive_sweets = [s for s in self.sweets if s.alive and s != ant.target_sweet]
+                alive_creatures = [c for c in self.creatures if c.alive]
+                all_targets = alive_sweets + alive_creatures
+                if all_targets:
+                    if is_player:
+                        ant.target_sweet = min(all_targets, key=lambda t: math.hypot(t.x - ant.x, t.y - ant.y))
+                    else:
+                        ant.target_sweet = choose_target(
+                            ant, alive_sweets, alive_creatures, self.zone_manager,
+                            game_time=self._elapsed_time,
+                            ai_ants=self.ai_ants, player_ants=self.player_ants)
+                    ant._teleport_count = 0
+                    logging.debug(
+                        "[ANT_DEBUG] ant_id=%d team=%s event=TARGET_SWITCH_TO id=%s",
+                        ant.ant_id, ant.team, getattr(ant.target_sweet, 'sweet_id', 'unknown'))
+                else:
+                    ant.state = Ant.STATE_IDLE
+                    return
 
             tx, ty = _get_sweet_edge_pos(ant.target_sweet, ant.x, ant.y)
             eat_mult = ant.get_eat_speed_mult(self.level_data['terrain'])
@@ -1154,9 +1235,69 @@ class GameState:
                 ant.storage = 0
                 ant.state = Ant.STATE_IDLE
 
+    def _safe_push_ant(self, target_ant, attacker_ant, push_dist):
+        """将目标蚂蚁沿推开方向安全位移，检测障碍物避免推入"""
+        dx = target_ant.x - attacker_ant.x
+        dy = target_ant.y - attacker_ant.y
+        d = max(1, math.hypot(dx, dy))
+        dir_x = dx / d
+        dir_y = dy / d
+
+        # 逐步回退找到安全位置
+        for step in range(int(push_dist), 0, -5):
+            test_x = target_ant.x + dir_x * step
+            test_y = target_ant.y + dir_y * step
+            test_x = max(10, min(WORLD_WIDTH - 10, test_x))
+            test_y = max(10, min(WORLD_HEIGHT - 10, test_y))
+            safe = True
+            for obs in target_ant.obstacles:
+                if obs.check_collision(test_x, test_y, target_ant.size // 2):
+                    safe = False
+                    break
+            if safe:
+                target_ant.x = test_x
+                target_ant.y = test_y
+                return True
+
+        # 所有步长都不安全，保持原位
+        logging.debug(
+            "[ANT_DEBUG] ant_id=%d team=%s state=%s pos=(%.1f,%.1f) event=KNOCKBACK_INTO_OBSTACLE",
+            target_ant.ant_id, target_ant.team, target_ant.state,
+            target_ant.x, target_ant.y)
+        return False
+
+    def _apply_combat_damage(self, attacker, target, current_time):
+        """对目标造成基础碰撞伤害（所有蚂蚁通用），返回是否命中"""
+        # 碰撞冷却检查
+        if current_time < attacker._combat_cooldown_until:
+            return False
+
+        attacker._combat_cooldown_until = current_time + 0.5  # COMBAT_COOLDOWN = 0.5s
+
+        # 记录无战斗trait的日志（用于排查攻击问题）
+        if attacker.has_knockback() == 0 and attacker.has_stun_chance() == 0 and attacker.has_steal() == 0:
+            logging.debug(
+                "[ANT_DEBUG] ant_id=%d team=%s state=%s pos=(%.1f,%.1f) event=COMBAT_NO_TRAIT target_id=%d",
+                attacker.ant_id, attacker.team, attacker.state,
+                attacker.x, attacker.y, target.ant_id)
+
+        # 基础伤害：所有蚂蚁碰撞时都会造成伤害，不依赖storage
+        damage = 1  # BASE_COMBAT_DAMAGE
+        # TRAIT_SUPREME: 伤害×1.3
+        if attacker.ant_data.get('trait') == TRAIT_SUPREME:
+            damage = max(1, int(damage * 1.3))
+
+        # 优先扣减storage，storage为0时也产生伤害反馈
+        if target.storage > 0:
+            target.storage -= min(target.storage, damage)
+        self.floating_texts.append(
+            FloatingText(str(damage), target.x + random.randint(-5, 5), target.y - 18,
+                         (255, 255, 255), 0.5, 12))
+        return True
+
     def _check_combat(self):
-        """检测敌我蚂蚁碰撞，触发击退/僵直/抢夺（PRD v2.0 分级冷却机制）"""
-        COMBAT_RANGE = 30
+        """检测敌我蚂蚁碰撞，触发基础伤害/击退/僵直/抢夺（PRD修复版）"""
+        COMBAT_RANGE = 40
         # 分级冷却时间（秒）
         KNOCKBACK_COOLDOWN = 0.5
         STUN_COOLDOWN = 1.0
@@ -1180,20 +1321,16 @@ class GameState:
 
                 # ── 玩家 → AI 方向 ──
 
-                # 击退（冷却0.5秒）
+                # 基础碰撞伤害（PRD需求1：所有蚂蚁通用）
+                self._apply_combat_damage(p_ant, a_ant, current_time)
+
+                # 击退（冷却0.5秒）— 含障碍物检测
                 kb = p_ant.has_knockback()
                 if kb > 0 and random.random() < kb:
                     last_kb = p_ant._last_knockback_time.get(a_id, 0)
                     if current_time - last_kb >= KNOCKBACK_COOLDOWN:
                         p_ant._last_knockback_time[a_id] = current_time
-                        dx = a_ant.x - p_ant.x
-                        dy = a_ant.y - p_ant.y
-                        d = max(1, math.hypot(dx, dy))
-                        push = 60
-                        a_ant.x += dx / d * push
-                        a_ant.y += dy / d * push
-                        a_ant.x = max(10, min(WORLD_WIDTH - 10, a_ant.x))
-                        a_ant.y = max(10, min(WORLD_HEIGHT - 10, a_ant.y))
+                        self._safe_push_ant(a_ant, p_ant, 60)
                         self.floating_texts.append(
                             FloatingText("击退!", a_ant.x, a_ant.y - 20,
                                          (255, 180, 50), 0.6, 14))
@@ -1202,9 +1339,9 @@ class GameState:
                 sc = p_ant.has_stun_chance()
                 if sc > 0 and random.random() < sc:
                     last_stun = p_ant._last_stun_time.get(a_id, 0)
-                    if (current_time - last_stun >= STUN_COOLDOWN
-                            and current_time < a_ant._stun_immune_until):
-                        pass  # 冰直免疫期内，跳过
+                    # PRD需求4：修复僵直免疫死代码，免疫期独立检查
+                    if current_time < a_ant._stun_immune_until:
+                        pass  # 免疫期内，跳过
                     elif current_time - last_stun >= STUN_COOLDOWN:
                         p_ant._last_stun_time[a_id] = current_time
                         a_ant.stun()
@@ -1225,28 +1362,24 @@ class GameState:
 
                 # ── AI → 玩家 方向 ──
 
-                # 击退（冷却0.5秒）
+                # 基础碰撞伤害（PRD需求1：所有蚂蚁通用）
+                self._apply_combat_damage(a_ant, p_ant, current_time)
+
+                # 击退（冷却0.5秒）— 含障碍物检测
                 kb2 = a_ant.has_knockback()
                 if kb2 > 0 and random.random() < kb2:
                     last_kb2 = a_ant._last_knockback_time.get(p_id, 0)
                     if current_time - last_kb2 >= KNOCKBACK_COOLDOWN:
                         a_ant._last_knockback_time[p_id] = current_time
-                        dx = p_ant.x - a_ant.x
-                        dy = p_ant.y - a_ant.y
-                        d = max(1, math.hypot(dx, dy))
-                        push = 60
-                        p_ant.x += dx / d * push
-                        p_ant.y += dy / d * push
-                        p_ant.x = max(10, min(WORLD_WIDTH - 10, p_ant.x))
-                        p_ant.y = max(10, min(WORLD_HEIGHT - 10, p_ant.y))
+                        self._safe_push_ant(p_ant, a_ant, 60)
 
                 # 僵直（冷却1.0秒 + 被动方0.5秒免疫期）
                 sc2 = a_ant.has_stun_chance()
                 if sc2 > 0 and random.random() < sc2:
                     last_stun2 = a_ant._last_stun_time.get(p_id, 0)
-                    if (current_time - last_stun2 >= STUN_COOLDOWN
-                            and current_time < p_ant._stun_immune_until):
-                        pass
+                    # PRD需求4：修复僵直免疫死代码，免疫期独立检查
+                    if current_time < p_ant._stun_immune_until:
+                        pass  # 免疫期内，跳过
                     elif current_time - last_stun2 >= STUN_COOLDOWN:
                         a_ant._last_stun_time[p_id] = current_time
                         p_ant.stun()
@@ -1343,5 +1476,18 @@ class GameState:
 # ── Main ──
 
 if __name__ == '__main__':
+    # 配置日志：创建 logs 文件夹，每次启动生成新的日志文件
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+    log_filename = 'ant_debug_{}.log'.format(
+        datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    )
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        filename=os.path.join(log_dir, log_filename),
+        filemode='w',
+    )
     game = GameState()
     game.run()

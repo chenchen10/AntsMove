@@ -307,6 +307,69 @@ def _remove_background(surf):
     return surf
 
 
+def load_walk_animation(ant_id, target_size=None):
+    """加载蚂蚁行走动画帧序列。
+
+    加载优先级：Sprite Sheet > 序列帧 > 空列表（静态图兜底由调用方处理）。
+
+    支持两种格式：
+    1. Sprite Sheet（优先）：images/ant_processed/ant{id}_walk_sheet.png
+       按等宽列 × 等高行切割（默认 8列×3行 = 24帧）。
+    2. 序列帧（回退）：images/ant_processed/ant{id}_walk/ant_walk_{frame:03d}.png
+
+    返回 list[surface]，素材不存在时返回空列表。
+    """
+    if target_size is None:
+        target_size = TARGET_SIZES['ant']
+
+    walk_dir = os.path.join(ANT_PROCESSED_DIR, f'ant{ant_id}_walk')
+    sheet_path = os.path.join(ANT_PROCESSED_DIR, f'ant{ant_id}_walk_sheet.png')
+
+    # 1. 优先加载 Sprite Sheet（8列×3行多行布局）
+    if os.path.exists(sheet_path):
+        try:
+            sheet = pygame.image.load(sheet_path).convert_alpha()
+            sw, sh = sheet.get_size()
+            if sw > 0 and sh > 0:
+                cols, rows = 8, 3
+                frame_w = sw // cols
+                frame_h = sh // rows
+                if frame_w > 0 and frame_h > 0:
+                    frames = []
+                    for r in range(rows):
+                        for c in range(cols):
+                            rect = pygame.Rect(c * frame_w, r * frame_h, frame_w, frame_h)
+                            if rect.right > sw or rect.bottom > sh:
+                                break
+                            frame_surf = sheet.subsurface(rect).copy()
+                            frame_surf = pygame.transform.smoothscale(frame_surf, target_size)
+                            frame_surf = _remove_background(frame_surf)
+                            frames.append(frame_surf)
+                    if frames:
+                        return frames
+        except Exception:
+            pass
+
+    # 2. 回退到序列帧目录
+    if os.path.isdir(walk_dir):
+        frames = []
+        for i in range(1, 100):  # 最多支持99帧
+            frame_path = os.path.join(walk_dir, f'ant_walk_{i:03d}.png')
+            if not os.path.exists(frame_path):
+                break
+            try:
+                img = pygame.image.load(frame_path).convert_alpha()
+                img = pygame.transform.smoothscale(img, target_size)
+                img = _remove_background(img)
+                frames.append(img)
+            except Exception:
+                pass
+        if frames:
+            return frames
+
+    return []
+
+
 def load_assets():
     """加载所有游戏精灵。优先加载PNG（去除背景），不存在则用代码生成。"""
     assets = {}
@@ -360,6 +423,14 @@ def load_assets():
         key = f'ant_{ant_id}'
         ant_images[ant_id] = assets.get(key, fallback_img)
     assets['ant_images'] = ant_images
+
+    # 加载蚂蚁行走动画帧（ant_id → [frame1, frame2, ...]）
+    ant_walk_frames = {}
+    for ant_id in range(1, 27):
+        walk_frames = load_walk_animation(ant_id)
+        if walk_frames:
+            ant_walk_frames[ant_id] = walk_frames
+    assets['ant_walk_frames'] = ant_walk_frames
 
     # 加载障碍物装饰图片（deco_*），缩放至OBSTACLE_TYPES定义的目标尺寸并去背
     from obstacle import OBSTACLE_TYPES

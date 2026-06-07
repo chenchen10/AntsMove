@@ -3,11 +3,12 @@
 import pygame
 import math
 import random
+import logging
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WORLD_WIDTH, WORLD_HEIGHT, ANT_SIZE,
     BLUE_ANT_COLOR, RED_ANT_COLOR,
     STUN_DURATION, STUN_SPEED_MULT,
-    SWEET_COLORS,
+    SWEET_COLORS, WALK_ANIM_FPS,
 )
 from ants_data import (
     ANTS, ANT_BY_ID, get_carry_capacity, get_speed, get_defense, MAX_ATTR_LEVEL,
@@ -32,6 +33,9 @@ class Ant(pygame.sprite.Sprite):
     STATE_EATING = 'eating'
     STATE_RETURNING = 'returning'
     STATE_STUNNED = 'stunned'
+    STATE_CHASING = 'chasing'
+
+    STUCK_FRAME_THRESHOLD = 30  # 连续未移动帧数阈值，触发传送
 
     def __init__(self, ant_id, team, x, y, carry_level=0, speed_level=0, defense_level=0,
                  assets=None, terrain=None, level=None):
@@ -90,6 +94,18 @@ class Ant(pygame.sprite.Sprite):
         self._last_steal_time = {}      # {enemy_ant_id: timestamp}
         self._stun_immune_until = 0.0   # 被僵直后的免疫期
 
+        # 基础碰撞冷却（PRD需求2）
+        self._combat_cooldown_until = 0.0  # 碰撞冷却结束时间戳
+
+        # 卡住检测（PRD需求5）
+        self._stuck_frame_count = 0  # 连续未移动帧数
+        self._teleport_count = 0  # 连续传送次数（超过3次切换目标）
+
+        # AI追击相关（PRD v2.0 Bug2修复）
+        self._chase_target = None  # 追击目标（玩家蚂蚁引用）
+        self._chase_timer = 0.0    # 追击计时器（秒）
+        self._original_target = None  # 追击前的原始采集目标
+
         # 颜色
         if team == 'player':
             self.color = BLUE_ANT_COLOR
@@ -99,6 +115,10 @@ class Ant(pygame.sprite.Sprite):
         # 加载精灵
         self.size = ANT_SIZE
         self.assets = assets or {}
+
+        # 行走动画帧（优先级高于 up_frames/down_frames）
+        ant_walk_frames_map = self.assets.get('ant_walk_frames', {})
+        self.walk_frames = ant_walk_frames_map.get(ant_id, [])
 
         # 优先使用每只蚂蚁的独立原型图
         ant_images = self.assets.get('ant_images', {})
@@ -273,9 +293,115 @@ class Ant(pygame.sprite.Sprite):
         self.x = max(10, min(WORLD_WIDTH - 10, new_x))
         self.y = max(10, min(WORLD_HEIGHT - 10, new_y))
 
+        # PRD需求5：卡住检测 — 连续未移动帧数追踪
+        moved = math.hypot(self.x - self.prev_x, self.y - self.prev_y) > 0.5
+        if moved:
+            self._stuck_frame_count = 0
+        else:
+            self._stuck_frame_count += 1
+            if self._stuck_frame_count >= self.STUCK_FRAME_THRESHOLD:
+                self._stuck_frame_count = 0
+                self._teleport_count += 1
+
+                # 生成安全传送点：沿远离最近障碍物方向偏移100px，四周检测空间
+                teleport_x, teleport_y = self._find_safe_teleport(tx, ty)
+                if teleport_x is not None:
+                    self.x = teleport_x
+                    self.y = teleport_y
+                    logging.debug(
+                        "[ANT_DEBUG] ant_id=%d team=%s state=%s pos=(%.1f,%.1f) event=STUCK_TELEPORT teleport_count=%d",
+                        self.ant_id, self.team, self.state, self.x, self.y, self._teleport_count)
+                else:
+                    logging.debug(
+                        "[ANT_DEBUG] ant_id=%d team=%s state=%s pos=(%.1f,%.1f) event=STUCK_NO_SAFE_POS teleport_count=%d",
+                        self.ant_id, self.team, self.state, self.x, self.y, self._teleport_count)
+
         self._update_animation(dt, moving=True)
         self.rect.center = (int(self.x), int(self.y))
         return False
+
+    def _find_safe_teleport(self, target_x, target_y):
+        """寻找安全传送点：远离障碍物、四周有足够空间
+
+        策略：
+        1. 先尝试沿最近障碍物推开方向偏移100px
+        2. 若不可行，尝试在目标sweet ±80px范围内随机采样
+        3. 每个候选点检测四周4个方向（上下左右各一个蚂蚁半径距离）是否有空间
+        """
+        ant_radius = self.size // 2
+
+        def _point_clear(x, y):
+            for obs in self.obstacles:
+                if obs.check_collision(x, y, ant_radius):
+                    return False
+            return True
+
+        def _four_dir_clear(x, y):
+            """检测上下左右4个方向是否有足够空间"""
+            offsets = [(0, ant_radius * 2), (0, -ant_radius * 2),
+                       (ant_radius * 2, 0), (-ant_radius * 2, 0)]
+            for ox, oy in offsets:
+                if not _point_clear(x + ox, y + oy):
+                    return False
+            return True
+
+        # 策略1：沿最近障碍物推开方向偏移100px
+        nearest_obs = None
+        nearest_dist = float('inf')
+        for obs in self.obstacles:
+            if not obs.collidable:
+                continue
+            cx = max(obs.rect.left, min(self.x, obs.rect.right))
+            cy = max(obs.rect.top, min(self.y, obs.rect.bottom))
+            d = math.hypot(self.x - cx, self.y - cy)
+            if d < nearest_dist:
+                nearest_dist = d
+                nearest_obs = obs
+
+        if nearest_obs is not None:
+            cx = max(nearest_obs.rect.left, min(self.x, nearest_obs.rect.right))
+            cy = max(nearest_obs.rect.top, min(self.y, nearest_obs.rect.bottom))
+            push_dx = self.x - cx
+            push_dy = self.y - cy
+            push_len = math.hypot(push_dx, push_dy)
+            if push_len > 1:
+                push_dx /= push_len
+                push_dy /= push_len
+            else:
+                push_dx, push_dy = 1.0, 0.0
+
+            far_x = self.x + push_dx * 100
+            far_y = self.y + push_dy * 100
+            far_x = max(10, min(WORLD_WIDTH - 10, far_x))
+            far_y = max(10, min(WORLD_HEIGHT - 10, far_y))
+            if _point_clear(far_x, far_y) and _four_dir_clear(far_x, far_y):
+                return far_x, far_y
+
+        # 策略2：在目标sweet ±80px范围内随机采样
+        candidates = []
+        for _ in range(10):
+            cx = target_x + random.uniform(-80, 80)
+            cy = target_y + random.uniform(-80, 80)
+            cx = max(10, min(WORLD_WIDTH - 10, cx))
+            cy = max(10, min(WORLD_HEIGHT - 10, cy))
+            if _point_clear(cx, cy) and _four_dir_clear(cx, cy):
+                dist = math.hypot(cx - self.x, cy - self.y)
+                candidates.append((dist, cx, cy))
+
+        if candidates:
+            candidates.sort(key=lambda c: c[0])
+            return candidates[0][1], candidates[0][2]
+
+        # 策略3：大范围采样
+        for _ in range(10):
+            cx = self.x + random.uniform(-200, 200)
+            cy = self.y + random.uniform(-200, 200)
+            cx = max(10, min(WORLD_WIDTH - 10, cx))
+            cy = max(10, min(WORLD_HEIGHT - 10, cy))
+            if _point_clear(cx, cy) and _four_dir_clear(cx, cy):
+                return cx, cy
+
+        return None, None
 
     def _avoid_obstacles(self, new_x, new_y, dir_x, dir_y, move_dist):
         """碰撞绕行：沿路径逐段检测，碰撞时尝试绕行、滑动或沿原方向最大安全距离前进"""
@@ -399,6 +525,10 @@ class Ant(pygame.sprite.Sprite):
             if sd > min_step:
                 return self.x + dx * sd, self.y + dy * sd
 
+        # PRD需求5：避障4阶段全部失败，记录日志
+        logging.debug(
+            "[ANT_DEBUG] ant_id=%d team=%s state=%s pos=(%.1f,%.1f) event=OBSTACLE_AVOID_FAILED",
+            self.ant_id, self.team, self.state, self.x, self.y)
         return self.x, self.y
 
     def _update_animation(self, dt, moving=True):
@@ -413,13 +543,6 @@ class Ant(pygame.sprite.Sprite):
             self.move_anim += dt * 8
             bob = math.sin(self.move_anim) * 1.5
 
-            if dy < -0.1:
-                frames = self.up_frames
-            elif dy > 0.1:
-                frames = self.down_frames
-            else:
-                frames = self.up_frames or self.down_frames
-
             if abs(dx) > 0.5 and abs(dy) > 0.5:
                 if dx > 0 and dy < 0:
                     tilt = -45
@@ -430,17 +553,36 @@ class Ant(pygame.sprite.Sprite):
                 else:
                     tilt = -45
 
-            if frames:
+            # 优先使用行走动画帧（12fps），无素材时降级到 up_frames/down_frames
+            if self.walk_frames:
+                walk_interval = 1.0 / max(1, WALK_ANIM_FPS)
                 self.anim_frame_timer += dt
-                if self.anim_frame_timer >= 0.15:
-                    self.anim_frame_timer -= 0.15
-                    self.anim_frame_idx = (self.anim_frame_idx + 1) % len(frames)
-                frame = frames[self.anim_frame_idx]
+                if self.anim_frame_timer >= walk_interval:
+                    self.anim_frame_timer -= walk_interval
+                    self.anim_frame_idx = (self.anim_frame_idx + 1) % len(self.walk_frames)
+                frame = self.walk_frames[self.anim_frame_idx]
             else:
-                frame = self.base_image
+                if dy < -0.1:
+                    frames = self.up_frames
+                elif dy > 0.1:
+                    frames = self.down_frames
+                else:
+                    frames = self.up_frames or self.down_frames
+
+                if frames:
+                    self.anim_frame_timer += dt
+                    if self.anim_frame_timer >= 0.15:
+                        self.anim_frame_timer -= 0.15
+                        self.anim_frame_idx = (self.anim_frame_idx + 1) % len(frames)
+                    frame = frames[self.anim_frame_idx]
+                else:
+                    frame = self.base_image
         else:
             self.anim_frame_timer = 0.0
-            frame = (self.up_frames or [self.base_image])[0]
+            if self.walk_frames:
+                frame = self.walk_frames[0]
+            else:
+                frame = (self.up_frames or [self.base_image])[0]
 
         if tilt != 0:
             frame = pygame.transform.rotate(frame, tilt)
@@ -449,6 +591,10 @@ class Ant(pygame.sprite.Sprite):
 
     def is_storage_full(self):
         return self.storage >= self.max_storage
+
+    def needs_target_switch(self):
+        """检查是否需要切换目标（连续传送>=3次仍未脱困）"""
+        return self._teleport_count >= 3
 
     def stun(self, immune=False):
         if immune or self.is_debuff_immune():
